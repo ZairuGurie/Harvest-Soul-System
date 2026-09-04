@@ -1,0 +1,100 @@
+@import "tailwindcss";
+
+:root {
+  --background: #f8faf5;
+  --foreground: #1a2e1f;
+  --harvest-blue: #1b6db5;
+  --harvest-blue-dark: #155a94;
+  --harvest-green: #2b8a3e;
+  --harvest-green-dark: #1f6b30;
+  --harvest-gold: #c9a227;
+  --harvest-wheat: #e8c84a;
+  --harvest-cream: #faf8f0;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-primary: var(--harvest-blue);
+  --color-primary-dark: var(--harvest-blue-dark);
+  --color-secondary: var(--harvest-green);
+  --color-secondary-dark: var(--harvest-green-dark);
+  --color-accent: var(--harvest-gold);
+  --color-harvest-blue: var(--harvest-blue);
+  --color-harvest-blue-dark: var(--harvest-blue-dark);
+  --color-harvest-green: var(--harvest-green);
+  --color-harvest-green-dark: var(--harvest-green-dark);
+  --color-harvest-gold: var(--harvest-gold);
+  --color-harvest-wheat: var(--harvest-wheat);
+  --color-harvest-cream: var(--harvest-cream);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0f1a14;
+    --foreground: #eef5f0;
+  }
+
+  body {
+    background-image:
+      linear-gradient(rgba(10, 20, 15, 0.62), rgba(10, 20, 15, 0.72)),
+      url("/harvest-souls-background.jpg");
+    background-size: cover;
+    background-position: center center;
+    background-repeat: no-repeat;
+    background-attachment: fixed;
+  }
+}
+
+body {
+  background-color: var(--background);
+  background-image:
+    linear-gradient(rgba(248, 250, 245, 0.55), rgba(250, 248, 240, 0.62)),
+    url("/harvest-souls-background.jpg");
+  background-size: cover;
+  background-position: center center;
+  background-repeat: no-repeat;
+  background-attachment: fixed;
+  color: var(--foreground);
+  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+}
+
+/* Readable text on photo background */
+h1, h2, h3, h4 {
+  color: var(--foreground);
+}
+
+@media (prefers-color-scheme: dark) {
+  h1, h2, h3, h4 {
+    color: #f8fafc;
+  }
+}
+
+/* Brand gradient utility (logo ring: blue → green) */
+.bg-harvest-gradient {
+  background: linear-gradient(135deg, var(--harvest-blue) 0%, var(--harvest-green) 100%);
+}
+
+.text-harvest-gradient {
+  background: linear-gradient(135deg, var(--harvest-blue), var(--harvest-green));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+@keyframes bible-rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-bible-rise {
+  animation: bible-rise 0.45s ease-out both;
+}
