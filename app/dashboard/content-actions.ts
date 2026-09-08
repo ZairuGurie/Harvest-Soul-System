@@ -27,8 +27,17 @@ export async function createPost(_prev: ContentState, formData: FormData): Promi
   const caption = String(formData.get("content") || formData.get("caption") || "").trim();
   const status = String(formData.get("status") || "PUBLISHED");
 
-  // Prefer pre-uploaded media JSON (avoids Next.js multipart server-action bugs).
-  let uploads: { url: string; storagePath: string; type: "PHOTO" | "VIDEO" }[] = [];
+  const publishStatus = status === "DRAFT" ? "DRAFT" : "PUBLISHED";
+
+  // Prefer pre-uploaded media JSON (signed or proxy upload — never overwrites prior objects).
+  let uploads: {
+    url: string;
+    storagePath: string;
+    type: "PHOTO" | "VIDEO";
+    mimeType?: string;
+    fileName?: string;
+    fileSizeBytes?: number;
+  }[] = [];
   const mediaJson = String(formData.get("media_json") || "").trim();
   if (mediaJson) {
     try {
@@ -36,6 +45,9 @@ export async function createPost(_prev: ContentState, formData: FormData): Promi
         url?: string;
         storagePath?: string;
         type?: string;
+        mimeType?: string;
+        fileName?: string;
+        fileSizeBytes?: number;
       }[];
       uploads = (parsed ?? [])
         .filter((u) => u.url && u.storagePath && (u.type === "PHOTO" || u.type === "VIDEO"))
@@ -43,6 +55,9 @@ export async function createPost(_prev: ContentState, formData: FormData): Promi
           url: u.url as string,
           storagePath: u.storagePath as string,
           type: u.type as "PHOTO" | "VIDEO",
+          mimeType: u.mimeType,
+          fileName: u.fileName,
+          fileSizeBytes: u.fileSizeBytes,
         }));
     } catch {
       return { error: "Invalid media payload." };
@@ -71,14 +86,15 @@ export async function createPost(_prev: ContentState, formData: FormData): Promi
       title,
       excerpt,
       content: caption || title,
-      status,
-      published_at: status === "PUBLISHED" ? new Date().toISOString() : null,
+      status: publishStatus,
+      published_at: publishStatus === "PUBLISHED" ? new Date().toISOString() : null,
     })
     .select("id")
     .single();
 
   if (error) {
-    await removeStoragePaths(uploads.map((u) => u.storagePath));
+    // Clean up ONLY newly uploaded objects from this request.
+    await removeStoragePaths(uploads.map((u) => u.storagePath), user.id);
     return { error: error.message };
   }
 
@@ -93,11 +109,21 @@ export async function createPost(_prev: ContentState, formData: FormData): Promi
       storage_path: u.storagePath,
       visibility: "PUBLIC",
       thumbnail_url: u.type === "PHOTO" ? u.url : null,
+      mime_type: u.mimeType ?? null,
+      file_size_bytes: u.fileSizeBytes ?? null,
+      original_filename: u.fileName ?? null,
     }));
 
-    const { error: mediaError } = await admin.from("media").insert(mediaRows);
+    let { error: mediaError } = await admin.from("media").insert(mediaRows);
+    if (mediaError && /mime_type|file_size_bytes|original_filename|schema cache|column/i.test(mediaError.message)) {
+      const basicRows = mediaRows.map(
+        ({ mime_type: _m, file_size_bytes: _f, original_filename: _o, ...rest }) => rest
+      );
+      const retry = await admin.from("media").insert(basicRows);
+      mediaError = retry.error;
+    }
     if (mediaError) {
-      await removeStoragePaths(uploads.map((u) => u.storagePath));
+      await removeStoragePaths(uploads.map((u) => u.storagePath), user.id);
       await admin.from("posts").delete().eq("id", data.id);
       if (/post_id/i.test(mediaError.message)) {
         return {
@@ -308,20 +334,45 @@ export async function createSermon(_prev: ContentState, formData: FormData): Pro
   }
 
   const admin = createAdminClient();
-  const { data, error } = await admin
-    .from("sermons")
-    .insert({
-      title,
-      speaker: speaker || null,
-      description: description || null,
-      sermon_date: sermonDate,
-      video_url: videoUrl,
-      visibility: "PUBLIC",
-    })
-    .select("id")
-    .single();
 
-  if (error) return { error: error.message };
+  // Never auto-feature on create — uploading must not replace the Featured Sermon.
+  // If no featured sermon exists yet, leave featured empty until staff clicks "Set featured".
+  const payload = {
+    title,
+    speaker: speaker || null,
+    description: description || null,
+    sermon_date: sermonDate,
+    video_url: videoUrl,
+    visibility: "PUBLIC",
+    is_featured: false,
+  };
+
+  let { data, error } = await admin.from("sermons").insert(payload).select("id").single();
+
+  if (error && /is_featured|schema cache|column .* does not exist/i.test(error.message)) {
+    const { is_featured: _f, ...withoutFeatured } = payload;
+    const fallback = await admin.from("sermons").insert(withoutFeatured).select("id").single();
+    data = fallback.data;
+    error = fallback.error;
+    if (!error) {
+      await writeAuditLog({
+        actorId: user.id,
+        action: "create",
+        entityType: "sermon",
+        entityId: data!.id,
+        summary: `Created sermon: ${title} (is_featured column missing — run media storage migration)`,
+      });
+      revalidatePath("/dashboard/sermons");
+      revalidatePath("/sermons");
+      revalidatePath("/");
+      return {
+        success:
+          "Sermon created. Run supabase/migrations/20260908120000_media_storage_improvements.sql to enable sticky Featured Sermon.",
+      };
+    }
+  }
+
+  if (error || !data) return { error: error?.message || "Could not create sermon." };
 
   await writeAuditLog({
     actorId: user.id,
@@ -334,7 +385,32 @@ export async function createSermon(_prev: ContentState, formData: FormData): Pro
   revalidatePath("/dashboard/sermons");
   revalidatePath("/sermons");
   revalidatePath("/");
-  return { success: "Sermon created." };
+  return { success: "Sermon created. Use “Set featured” to show it on the landing page." };
+}
+
+/** Explicit Featured Sermon — does NOT delete the previous featured sermon. */
+export async function setFeaturedSermon(formData: FormData) {
+  const user = await requireStaff();
+  const id = String(formData.get("id") || "");
+  if (!id) return;
+
+  const admin = createAdminClient();
+  await admin.from("sermons").update({ is_featured: false }).eq("is_featured", true);
+  const { error } = await admin.from("sermons").update({ is_featured: true }).eq("id", id);
+
+  if (!error) {
+    await writeAuditLog({
+      actorId: user.id,
+      action: "update",
+      entityType: "sermon",
+      entityId: id,
+      summary: "Set featured sermon",
+    });
+  }
+
+  revalidatePath("/dashboard/sermons");
+  revalidatePath("/sermons");
+  revalidatePath("/");
 }
 
 export async function deleteSermon(formData: FormData) {
@@ -554,13 +630,22 @@ export async function createWorshipSong(
   const categoryRaw = String(formData.get("category") || "WORSHIP").trim().toUpperCase();
   const category = categoryRaw === "PRAISE" ? "PRAISE" : "WORSHIP";
   const isFeatured = String(formData.get("is_featured") || "") === "true";
+  const source = String(formData.get("source") || "upload").trim().toLowerCase();
   const videoUrl = String(formData.get("video_url") || "").trim() || null;
   const audioUrl = String(formData.get("audio_url") || "").trim() || null;
   const videoStoragePath = String(formData.get("video_storage_path") || "").trim() || null;
   const audioStoragePath = String(formData.get("audio_storage_path") || "").trim() || null;
 
   if (!title) return { error: "Title is required." };
-  if (!videoUrl || !audioUrl) {
+
+  const isYoutube = source === "youtube";
+  if (isYoutube) {
+    const { parseVideoUrl } = await import("@/lib/media/videoUrl");
+    const parsed = parseVideoUrl(videoUrl);
+    if (!videoUrl || !parsed || parsed.provider !== "youtube") {
+      return { error: "A valid YouTube URL is required." };
+    }
+  } else if (!videoUrl || !audioUrl) {
     return { error: "Upload a video so MP3 audio can be generated." };
   }
 
@@ -578,9 +663,9 @@ export async function createWorshipSong(
       lyrics,
       category,
       video_url: videoUrl,
-      audio_url: audioUrl,
-      video_storage_path: videoStoragePath,
-      audio_storage_path: audioStoragePath,
+      audio_url: isYoutube ? null : audioUrl,
+      video_storage_path: isYoutube ? null : videoStoragePath,
+      audio_storage_path: isYoutube ? null : audioStoragePath,
       is_featured: isFeatured,
       visibility: "PUBLIC",
       created_by: user.id,
@@ -601,13 +686,19 @@ export async function createWorshipSong(
     action: "create",
     entityType: "song",
     entityId: data.id,
-    summary: `Published ${category.toLowerCase()}: ${title}`,
+    summary: isYoutube
+      ? `Published ${category.toLowerCase()} (YouTube): ${title}`
+      : `Published ${category.toLowerCase()}: ${title}`,
   });
 
   revalidatePath("/dashboard/worship");
   revalidatePath("/songs");
   revalidatePath("/");
-  return { success: `${category === "PRAISE" ? "Praise" : "Worship"} published with MP3 audio.` };
+  return {
+    success: isYoutube
+      ? `${category === "PRAISE" ? "Praise" : "Worship"} published from YouTube (no storage used).`
+      : `${category === "PRAISE" ? "Praise" : "Worship"} published with MP3 audio.`,
+  };
 }
 
 export async function setFeaturedWorshipSong(formData: FormData) {

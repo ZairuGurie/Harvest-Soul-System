@@ -35,7 +35,7 @@ async function ensureBucket() {
   if (!exists) {
     const { error } = await sb.storage.createBucket(BUCKET, {
       public: true,
-      fileSizeLimit: 52428800,
+      fileSizeLimit: 104857600,
       allowedMimeTypes: ALLOWED,
     });
     if (error) throw error;

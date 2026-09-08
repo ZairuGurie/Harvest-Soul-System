@@ -3,6 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useRef, useState } from "react";
+import { isFacebookMediaUrl, parseVideoUrl } from "@/lib/media/videoUrl";
 
 export type LatestPostCover = {
   url: string;
@@ -17,6 +18,17 @@ export type LatestPostCardProps = {
   cover?: LatestPostCover | null;
 };
 
+function isDirectPlayableVideo(url: string) {
+  if (isFacebookMediaUrl(url)) return false;
+  try {
+    const host = new URL(url).hostname.replace(/^www\./, "").toLowerCase();
+    if (host.includes("youtube") || host === "youtu.be") return false;
+  } catch {
+    return false;
+  }
+  return /\.(mp4|webm|mov)(\?|$)/i.test(url) || /\/storage\//i.test(url);
+}
+
 export default function LatestPostCard({
   id,
   title,
@@ -27,9 +39,13 @@ export default function LatestPostCard({
   const videoRef = useRef<HTMLVideoElement>(null);
   const [playing, setPlaying] = useState(false);
 
+  const fb = cover?.url ? parseVideoUrl(cover.url) : null;
+  const isFbEmbed = fb?.provider === "facebook";
+  const canHoverPlay = cover?.type === "VIDEO" && !!cover.url && isDirectPlayableVideo(cover.url);
+
   async function playPreview() {
     const el = videoRef.current;
-    if (!el || cover?.type !== "VIDEO") return;
+    if (!el || !canHoverPlay) return;
     try {
       el.muted = true;
       await el.play();
@@ -53,6 +69,13 @@ export default function LatestPostCard({
       })
     : null;
 
+  const cta =
+    isFbEmbed && fb?.facebookKind === "post"
+      ? "Open to view photos"
+      : cover?.type === "VIDEO"
+        ? "Open to watch"
+        : "Read post";
+
   return (
     <Link
       href={`/posts/${id}`}
@@ -63,11 +86,11 @@ export default function LatestPostCard({
       onBlur={pausePreview}
     >
       <div className="relative aspect-[16/10] overflow-hidden bg-gradient-to-br from-harvest-blue/20 via-slate-800 to-harvest-green/30">
-        {cover?.type === "VIDEO" ? (
+        {canHoverPlay ? (
           <>
             <video
               ref={videoRef}
-              src={`${cover.url}#t=0.1`}
+              src={`${cover!.url}#t=0.1`}
               className="absolute inset-0 h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
               muted
               playsInline
@@ -91,7 +114,21 @@ export default function LatestPostCard({
               Video
             </span>
           </>
-        ) : cover?.type === "PHOTO" ? (
+        ) : isFbEmbed ? (
+          <>
+            <div className="absolute inset-0 bg-gradient-to-br from-slate-800 to-slate-950" />
+            <div className="absolute inset-0 flex items-center justify-center">
+              <span className="inline-flex h-14 w-14 items-center justify-center rounded-full bg-white/90 text-harvest-blue-dark shadow-lg">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M8 5v14l11-7z" />
+                </svg>
+              </span>
+            </div>
+            <span className="absolute left-3 top-3 rounded-md bg-black/65 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">
+              {fb?.facebookKind === "post" ? "Photos" : "Facebook"}
+            </span>
+          </>
+        ) : cover?.type === "PHOTO" && cover.url && !isFacebookMediaUrl(cover.url) ? (
           <>
             <Image
               src={cover.url}
@@ -102,6 +139,20 @@ export default function LatestPostCard({
               sizes="(max-width: 768px) 100vw, 420px"
             />
             <div className="absolute inset-0 bg-gradient-to-t from-black/45 via-transparent to-transparent" />
+          </>
+        ) : cover?.type === "VIDEO" ? (
+          <>
+            <div className="absolute inset-0 bg-gradient-to-br from-slate-800 to-slate-950" />
+            <div className="absolute inset-0 flex items-center justify-center">
+              <span className="inline-flex h-14 w-14 items-center justify-center rounded-full bg-white/90 text-harvest-blue-dark shadow-lg">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M8 5v14l11-7z" />
+                </svg>
+              </span>
+            </div>
+            <span className="absolute left-3 top-3 rounded-md bg-black/65 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">
+              Video
+            </span>
           </>
         ) : (
           <div className="absolute inset-0 flex items-center justify-center">
@@ -121,10 +172,10 @@ export default function LatestPostCard({
           {title}
         </h3>
         {excerpt ? (
-          <p className="text-sm text-slate-600 line-clamp-2 dark:text-slate-300">{excerpt}</p>
+          <p className="line-clamp-2 text-sm text-slate-600 dark:text-slate-300">{excerpt}</p>
         ) : null}
         <p className="pt-1 text-xs font-medium text-harvest-green-dark dark:text-emerald-300">
-          {cover?.type === "VIDEO" ? "Hover to preview · Open to watch" : "Read post"}
+          {cta}
         </p>
       </div>
     </Link>

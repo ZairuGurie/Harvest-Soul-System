@@ -1,6 +1,12 @@
 import { createAdminClient } from "@/lib/supabase/server";
 import { convertVideoBufferToMp3 } from "@/lib/media/videoToMp3";
 import { POST_MEDIA_BUCKET } from "@/lib/media/upload";
+import {
+  buildUniqueStoragePath,
+  formatBytesLabel,
+  getMaxUploadBytes,
+  isPathOwnedByUser,
+} from "@/lib/media/limits";
 
 export const WORSHIP_BUCKET = "worship-media";
 
@@ -12,13 +18,6 @@ const VIDEO_MIME = new Set([
   "video/mpeg",
 ]);
 
-/** Stay within typical Supabase project file-size caps (free tier ~50MB). */
-const MAX_BYTES = 50 * 1024 * 1024;
-
-function sanitizeFileName(name: string) {
-  return name.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 120);
-}
-
 async function bucketExists(name: string) {
   const admin = createAdminClient();
   const { data: buckets } = await admin.storage.listBuckets();
@@ -27,26 +26,34 @@ async function bucketExists(name: string) {
 
 /**
  * Ensures a public storage bucket for worship files.
- * Falls back to post-media when worship-media cannot be created (plan size limits).
+ * Falls back to post-media when worship-media cannot be created (plan limits).
+ * Never deletes existing objects.
  */
 export async function resolveWorshipBucket(): Promise<{ bucket: string; error?: string }> {
   const admin = createAdminClient();
+  const maxBytes = getMaxUploadBytes();
 
   if (await bucketExists(WORSHIP_BUCKET)) {
+    try {
+      await admin.storage.updateBucket(WORSHIP_BUCKET, {
+        public: true,
+        fileSizeLimit: maxBytes,
+      });
+    } catch {
+      // keep existing
+    }
     return { bucket: WORSHIP_BUCKET };
   }
 
   const { error } = await admin.storage.createBucket(WORSHIP_BUCKET, {
     public: true,
-    fileSizeLimit: MAX_BYTES,
-    // Omit allowedMimeTypes so MP4 + MP3 always accepted
+    fileSizeLimit: maxBytes,
   });
 
   if (!error || /already exists|duplicate/i.test(error.message)) {
     return { bucket: WORSHIP_BUCKET };
   }
 
-  // Plan may reject custom limits — try a minimal create.
   const retry = await admin.storage.createBucket(WORSHIP_BUCKET, { public: true });
   if (!retry.error || /already exists|duplicate/i.test(retry.error.message)) {
     return { bucket: WORSHIP_BUCKET };
@@ -58,7 +65,7 @@ export async function resolveWorshipBucket(): Promise<{ bucket: string; error?: 
 
   const fallback = await admin.storage.createBucket(POST_MEDIA_BUCKET, {
     public: true,
-    fileSizeLimit: MAX_BYTES,
+    fileSizeLimit: maxBytes,
   });
   if (!fallback.error || /already exists|duplicate/i.test(fallback.error.message)) {
     return { bucket: POST_MEDIA_BUCKET };
@@ -77,12 +84,14 @@ export type WorshipUploadResult = {
   audioStoragePath: string;
   fileName: string;
   bucket: string;
+  fileSizeBytes?: number;
 };
 
 export async function uploadWorshipVideoAndConvert(
   file: File,
   userId: string
 ): Promise<{ result?: WorshipUploadResult; error?: string }> {
+  const maxBytes = getMaxUploadBytes();
   if (!file || file.size === 0) {
     return { error: "No video file provided." };
   }
@@ -91,9 +100,9 @@ export async function uploadWorshipVideoAndConvert(
       error: "Unsupported video type. Use MP4, WebM, or MOV.",
     };
   }
-  if (file.size > MAX_BYTES) {
+  if (file.size > maxBytes) {
     return {
-      error: `${file.name} is too large (max 50MB). Compress the video or trim it, then try again.`,
+      error: `${file.name} is too large (max ${formatBytesLabel(maxBytes)}). Compress or trim, then try again.`,
     };
   }
 
@@ -101,11 +110,10 @@ export async function uploadWorshipVideoAndConvert(
   if (bucketError) return { error: bucketError };
 
   const admin = createAdminClient();
-  const stamp = Date.now();
-  const safeName = sanitizeFileName(file.name);
-  const prefix = bucket === WORSHIP_BUCKET ? userId : `worship/${userId}`;
-  const videoPath = `${prefix}/${stamp}-${safeName}`;
-  const audioPath = `${prefix}/${stamp}-${safeName.replace(/\.[^.]+$/, "") || "audio"}.mp3`;
+  const prefix = bucket === WORSHIP_BUCKET ? undefined : "worship";
+  const videoPath = buildUniqueStoragePath(userId, file.name, prefix);
+  const audioBase = file.name.replace(/\.[^.]+$/, "") || "audio";
+  const audioPath = buildUniqueStoragePath(userId, `${audioBase}.mp3`, prefix);
 
   const videoBuffer = Buffer.from(await file.arrayBuffer());
 
@@ -114,6 +122,7 @@ export async function uploadWorshipVideoAndConvert(
     ({ mp3 } = await convertVideoBufferToMp3(videoBuffer, file.type || "video/mp4", file.name));
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown conversion error";
+    // Do not touch existing worship media — nothing was stored yet.
     return { error: `Could not convert video to MP3: ${message}` };
   }
 
@@ -130,6 +139,7 @@ export async function uploadWorshipVideoAndConvert(
     upsert: false,
   });
   if (audioUpload.error) {
+    // Clean up ONLY the newly uploaded video from this request.
     await admin.storage.from(bucket).remove([videoPath]);
     return { error: `MP3 upload failed: ${audioUpload.error.message}` };
   }
@@ -145,21 +155,26 @@ export async function uploadWorshipVideoAndConvert(
       audioStoragePath: audioPath,
       fileName: file.name,
       bucket,
+      fileSizeBytes: file.size,
     },
   };
 }
 
-export async function removeWorshipStoragePaths(paths: string[], bucketHint?: string) {
-  if (paths.length === 0) return;
+export async function removeWorshipStoragePaths(paths: string[], bucketHint?: string, ownerUserId?: string) {
+  const safe = paths.filter((p) => {
+    if (!p || typeof p !== "string") return false;
+    if (p.includes("..") || /^https?:\/\//i.test(p) || p.startsWith("/")) return false;
+    if (ownerUserId) return isPathOwnedByUser(p, ownerUserId);
+    return true;
+  });
+  if (safe.length === 0) return;
   try {
     const admin = createAdminClient();
-    const buckets = bucketHint
-      ? [bucketHint]
-      : [WORSHIP_BUCKET, POST_MEDIA_BUCKET];
+    const buckets = bucketHint ? [bucketHint] : [WORSHIP_BUCKET, POST_MEDIA_BUCKET];
     for (const bucket of buckets) {
-      await admin.storage.from(bucket).remove(paths);
+      await admin.storage.from(bucket).remove(safe);
     }
   } catch {
-    // best-effort
+    // best-effort for THIS request's objects
   }
 }

@@ -1,5 +1,8 @@
 export type VideoProvider = "facebook" | "youtube" | "direct" | "unknown";
 
+/** Facebook video plugin vs Embedded Posts plugin (photos / multi-photo / text posts). */
+export type FacebookEmbedKind = "video" | "post";
+
 export type ParsedVideoUrl = {
   original: string;
   provider: VideoProvider;
@@ -14,6 +17,8 @@ export type ParsedVideoUrl = {
   /** True when hover autoplay via iframe is reliable */
   hoverPlayable: boolean;
   label: string;
+  /** Set when provider is facebook */
+  facebookKind?: FacebookEmbedKind;
 };
 
 function safeUrl(raw: string): URL | null {
@@ -48,7 +53,7 @@ function youtubeId(url: URL): string | null {
   return null;
 }
 
-function isFacebookUrl(url: URL) {
+export function isFacebookUrl(url: URL) {
   const host = url.hostname.replace(/^www\./, "").toLowerCase();
   return (
     host === "facebook.com" ||
@@ -59,13 +64,55 @@ function isFacebookUrl(url: URL) {
   );
 }
 
-/** Strip tracking params that break Facebook's embed plugin. */
+export function isFacebookMediaUrl(raw?: string | null): boolean {
+  if (!raw?.trim()) return false;
+  const url = safeUrl(raw);
+  return !!url && isFacebookUrl(url);
+}
+
+/**
+ * Decide video.php vs post.php.
+ * Multi-photo albums, permalinks, /posts/, /photo/, /share/p/ → Embedded Post.
+ * Reels, watch, /videos/, fb.watch → Video plugin.
+ */
+export function classifyFacebookEmbedKind(raw: string): FacebookEmbedKind {
+  const url = safeUrl(raw);
+  if (!url || !isFacebookUrl(url)) return "post";
+
+  const host = url.hostname.replace(/^www\./, "").toLowerCase();
+  const path = url.pathname;
+
+  if (host === "fb.watch") return "video";
+  if (/\/reel\//i.test(path)) return "video";
+  if (/\/videos\//i.test(path)) return "video";
+  if (/\/watch\/?/i.test(path)) return "video";
+  if (/\/share\/[rv]\//i.test(path)) return "video";
+
+  const watchId = url.searchParams.get("v");
+  if (watchId && /^\d+$/.test(watchId)) return "video";
+
+  // Explicit photo / multi-photo / feed post shapes
+  if (/\/photo\/?/i.test(path)) return "post";
+  if (/\/photos\//i.test(path)) return "post";
+  if (/\/posts\//i.test(path)) return "post";
+  if (/\/permalink\.php$/i.test(path)) return "post";
+  if (/\/story\.php$/i.test(path)) return "post";
+  if (/\/share\/p\//i.test(path)) return "post";
+
+  const set = url.searchParams.get("set") || "";
+  if (/^pcb\./i.test(set) || /story_fbid/i.test(url.search)) return "post";
+
+  // Unknown facebook.com links: prefer post embed (photo albums fail on video.php).
+  return "post";
+}
+
+/** Strip tracking params that break Facebook's embed plugins. */
 export function canonicalizeFacebookUrl(raw: string): string {
   const url = safeUrl(raw);
   if (!url || !isFacebookUrl(url)) return raw.trim();
 
-  // Keep clean path for /reel/ID, /videos/ID, /watch/?v=
   const path = url.pathname.replace(/\/+$/, "");
+
   const reel = path.match(/\/reel\/(\d+)/i);
   if (reel) return `https://www.facebook.com/reel/${reel[1]}`;
 
@@ -77,19 +124,42 @@ export function canonicalizeFacebookUrl(raw: string): string {
     return `https://www.facebook.com/watch/?v=${watchId}`;
   }
 
-  // share/r short links stay as-is until resolved server-side
-  return `${url.origin}${url.pathname}`.replace(/\/+$/, "") + (url.search || "");
+  // Keep query for permalink/photo (story_fbid, fbid, set=pcb.*) — required for embeds.
+  if (
+    /\/permalink\.php$/i.test(path) ||
+    /\/story\.php$/i.test(path) ||
+    /\/photo\/?/i.test(path) ||
+    url.searchParams.has("story_fbid") ||
+    url.searchParams.has("fbid")
+  ) {
+    const keep = new URLSearchParams();
+    for (const key of ["story_fbid", "id", "fbid", "set", "type"]) {
+      const val = url.searchParams.get(key);
+      if (val) keep.set(key, val);
+    }
+    const qs = keep.toString();
+    return `https://www.facebook.com${path}${qs ? `?${qs}` : ""}`;
+  }
+
+  // /PageName/posts/pfbid... or /share/p/...
+  return `https://www.facebook.com${path}${url.search || ""}`.replace(/\/+$/, "") || raw.trim();
 }
 
-function facebookEmbed(href: string, autoplay: boolean) {
+function facebookVideoEmbed(href: string, autoplay: boolean) {
   const encoded = encodeURIComponent(canonicalizeFacebookUrl(href));
   const base = `https://www.facebook.com/plugins/video.php?href=${encoded}&show_text=false&width=560&height=315`;
   return autoplay ? `${base}&autoplay=true&mute=0` : base;
 }
 
+/** Embedded Posts plugin — shows text + single/multi photos in one iframe. */
+function facebookPostEmbed(href: string) {
+  const encoded = encodeURIComponent(canonicalizeFacebookUrl(href));
+  return `https://www.facebook.com/plugins/post.php?href=${encoded}&show_text=true&width=500`;
+}
+
 /**
  * Normalize a sermon / media video link into playable embed or direct sources.
- * Accepts Facebook watch/reel/share links, fb.watch, YouTube, and direct MP4/WebM.
+ * Accepts Facebook watch/reel/share links, photo posts, fb.watch, YouTube, and direct MP4/WebM.
  */
 export function parseVideoUrl(raw?: string | null): ParsedVideoUrl | null {
   if (!raw?.trim()) return null;
@@ -106,15 +176,26 @@ export function parseVideoUrl(raw?: string | null): ParsedVideoUrl | null {
 
   if (isFacebookUrl(url)) {
     const canonical = canonicalizeFacebookUrl(original);
-    const isShareShort = /\/share\/[rv]\//i.test(url.pathname);
+    const facebookKind = classifyFacebookEmbedKind(canonical);
+    if (facebookKind === "video") {
+      return {
+        original,
+        provider: "facebook",
+        facebookKind: "video",
+        embedUrl: facebookVideoEmbed(canonical, false),
+        autoplayEmbedUrl: facebookVideoEmbed(canonical, true),
+        hoverPlayable: false,
+        label: "Facebook video",
+      };
+    }
     return {
       original,
       provider: "facebook",
-      embedUrl: facebookEmbed(canonical, false),
-      autoplayEmbedUrl: facebookEmbed(canonical, true),
-      // Facebook share/reel embeds are often blocked in iframes — avoid hover iframe.
+      facebookKind: "post",
+      embedUrl: facebookPostEmbed(canonical),
+      autoplayEmbedUrl: facebookPostEmbed(canonical),
       hoverPlayable: false,
-      label: isShareShort ? "Facebook" : "Facebook",
+      label: "Facebook post",
     };
   }
 
@@ -149,14 +230,23 @@ export function parseVideoUrl(raw?: string | null): ParsedVideoUrl | null {
   };
 }
 
+/** Sermons / video-only fields — Facebook photo posts are not valid here. */
 export function isAcceptedVideoUrl(raw?: string | null): boolean {
+  const parsed = parseVideoUrl(raw);
+  if (!parsed) return false;
+  if (parsed.provider === "facebook") return parsed.facebookKind === "video";
+  return parsed.provider !== "unknown";
+}
+
+/** Media importer — Facebook videos and photo/multi-photo posts. */
+export function isAcceptedFacebookOrVideoUrl(raw?: string | null): boolean {
   const parsed = parseVideoUrl(raw);
   if (!parsed) return false;
   return parsed.provider !== "unknown";
 }
 
 /**
- * Follow redirects for Facebook share/r and fb.watch short links so embeds use a canonical URL.
+ * Follow redirects for Facebook share short links so embeds use a canonical URL.
  */
 export async function resolveVideoUrl(raw: string): Promise<string> {
   const trimmed = raw.trim();
@@ -166,7 +256,7 @@ export async function resolveVideoUrl(raw: string): Promise<string> {
   if (!isFacebookUrl(url)) return trimmed;
 
   const needsResolve =
-    /\/share\/[rv]\//i.test(url.pathname) ||
+    /\/share\/[pvr]\//i.test(url.pathname) ||
     url.hostname.replace(/^www\./, "").toLowerCase() === "fb.watch";
 
   if (!needsResolve) return canonicalizeFacebookUrl(trimmed);

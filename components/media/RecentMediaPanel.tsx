@@ -13,15 +13,42 @@ export type RecentMediaItem = {
   post_id?: string | null;
 };
 
+function isExternalHostMedia(url: string) {
+  try {
+    const host = new URL(url).hostname.replace(/^www\./, "").toLowerCase();
+    return (
+      host === "facebook.com" ||
+      host.endsWith(".facebook.com") ||
+      host === "fb.watch" ||
+      host === "fb.com" ||
+      host === "youtu.be" ||
+      host === "youtube.com" ||
+      host.endsWith(".youtube.com")
+    );
+  } catch {
+    return false;
+  }
+}
+
 function MediaTile({ item }: { item: RecentMediaItem }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [playing, setPlaying] = useState(false);
   const isVideo = String(item.type || "").toUpperCase() === "VIDEO";
   const href = item.post_id ? `/posts/${item.post_id}` : item.url || "/posts";
   const src = item.url || item.thumbnail_url || "";
+  const external = !!src && isExternalHostMedia(src);
+  const canHoverPlay = isVideo && !!src && !external;
+  const badge =
+    external && /facebook|fb\.watch|fb\.com/i.test(src)
+      ? String(item.type || "").toUpperCase() === "PHOTO"
+        ? "Photos"
+        : "Facebook"
+      : isVideo
+        ? "Video"
+        : "Photo";
 
   async function playPreview() {
-    if (!isVideo || !videoRef.current) return;
+    if (!canHoverPlay || !videoRef.current) return;
     try {
       videoRef.current.muted = true;
       await videoRef.current.play();
@@ -46,7 +73,7 @@ function MediaTile({ item }: { item: RecentMediaItem }) {
       onFocus={playPreview}
       onBlur={pausePreview}
     >
-      {isVideo && src ? (
+      {canHoverPlay ? (
         <video
           ref={videoRef}
           src={`${src}#t=0.1`}
@@ -56,6 +83,8 @@ function MediaTile({ item }: { item: RecentMediaItem }) {
           loop
           preload="metadata"
         />
+      ) : external ? (
+        <div className="absolute inset-0 bg-gradient-to-br from-slate-800 to-slate-950" />
       ) : src ? (
         <Image
           src={src}
@@ -71,27 +100,22 @@ function MediaTile({ item }: { item: RecentMediaItem }) {
 
       <div className="absolute inset-0 bg-gradient-to-t from-black/65 via-black/10 to-transparent opacity-90" />
 
-      {isVideo ? (
-        <>
-          <span className="absolute left-2 top-2 rounded bg-black/70 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">
-            Video
+      <span className="absolute left-2 top-2 rounded bg-black/70 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">
+        {badge}
+      </span>
+
+      {(isVideo || external) && (
+        <span
+          className={`absolute inset-0 flex items-center justify-center transition-opacity ${
+            playing ? "opacity-0" : "opacity-100"
+          }`}
+          aria-hidden
+        >
+          <span className="inline-flex h-11 w-11 items-center justify-center rounded-full bg-white/90 text-harvest-blue-dark shadow-lg transition-transform group-hover:scale-105">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M8 5v14l11-7z" />
+            </svg>
           </span>
-          <span
-            className={`absolute inset-0 flex items-center justify-center transition-opacity ${
-              playing ? "opacity-0" : "opacity-100"
-            }`}
-            aria-hidden
-          >
-            <span className="inline-flex h-11 w-11 items-center justify-center rounded-full bg-white/90 text-harvest-blue-dark shadow-lg transition-transform group-hover:scale-105">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M8 5v14l11-7z" />
-              </svg>
-            </span>
-          </span>
-        </>
-      ) : (
-        <span className="absolute left-2 top-2 rounded bg-black/70 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">
-          Photo
         </span>
       )}
 

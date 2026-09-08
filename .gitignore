@@ -43,3 +43,5 @@ next-env.d.ts
 # large archives
 *.7z
 HarvestSouls.7z
+.vercel
+.env*

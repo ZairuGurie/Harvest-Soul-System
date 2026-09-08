@@ -1,5 +1,6 @@
 import { requireStaff } from "@/lib/auth/session";
 import { createAdminClient } from "@/lib/supabase/server";
+import { parseVideoUrl } from "@/lib/media/videoUrl";
 import { deleteWorshipSong, setFeaturedWorshipSong } from "../content-actions";
 import WorshipComposer from "./WorshipComposer";
 import Button from "@/components/ui/Button";
@@ -14,6 +15,13 @@ type SongRow = {
   is_featured: boolean | null;
   created_at: string | null;
 };
+
+function sourceLabel(row: SongRow) {
+  if (row.audio_url) return "MP3 ready";
+  const parsed = parseVideoUrl(row.video_url);
+  if (parsed?.provider === "youtube") return "YouTube";
+  return "No audio";
+}
 
 export default async function WorshipDashboardPage() {
   await requireStaff();
@@ -34,7 +42,7 @@ export default async function WorshipDashboardPage() {
       <header>
         <h1 className="text-2xl font-bold">Worship & Praise</h1>
         <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-          Upload a worship video — the system converts it to MP3 for the landing page player.
+          Add worship via YouTube (no storage) or upload a video for automatic MP3 conversion.
         </p>
       </header>
 
@@ -49,7 +57,7 @@ export default async function WorshipDashboardPage() {
       ) : null}
 
       <section className="rounded-xl border bg-white p-6 dark:bg-slate-900 dark:border-slate-700">
-        <h2 className="mb-4 font-semibold">Upload worship / praise</h2>
+        <h2 className="mb-4 font-semibold">Add worship / praise</h2>
         <WorshipComposer />
       </section>
 
@@ -61,7 +69,10 @@ export default async function WorshipDashboardPage() {
           <p className="px-6 py-8 text-sm text-slate-500">No worship tracks yet.</p>
         ) : (
           <ul className="divide-y dark:divide-slate-800">
-            {rows.map((row) => (
+            {rows.map((row) => {
+              const yt = !row.audio_url ? parseVideoUrl(row.video_url) : null;
+              const isYoutube = yt?.provider === "youtube" && !!yt.embedUrl;
+              return (
               <li key={row.id} className="px-6 py-5">
                 <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                   <div className="min-w-0">
@@ -75,10 +86,22 @@ export default async function WorshipDashboardPage() {
                     </p>
                     <p className="mt-0.5 text-xs text-slate-500">
                       {[row.category || "WORSHIP", row.artist || "—"].join(" · ")}
-                      {row.audio_url ? " · MP3 ready" : " · No audio"}
+                      {" · "}
+                      {sourceLabel(row)}
                     </p>
                     {row.audio_url ? (
                       <audio controls src={row.audio_url} className="mt-3 w-full max-w-md" preload="none" />
+                    ) : null}
+                    {isYoutube ? (
+                      <div className="mt-3 w-full max-w-md overflow-hidden rounded-lg bg-black aspect-video">
+                        <iframe
+                          title={`${row.title} YouTube`}
+                          src={yt.embedUrl}
+                          className="h-full w-full"
+                          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                          allowFullScreen
+                        />
+                      </div>
                     ) : null}
                   </div>
                   <div className="flex flex-wrap gap-2">
@@ -97,7 +120,7 @@ export default async function WorshipDashboardPage() {
                         rel="noopener noreferrer"
                         className="inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-medium text-harvest-green-dark hover:bg-harvest-green/10 dark:text-emerald-200"
                       >
-                        Video
+                        {isYoutube ? "YouTube" : "Video"}
                       </a>
                     ) : null}
                     <form action={deleteWorshipSong}>
@@ -109,7 +132,8 @@ export default async function WorshipDashboardPage() {
                   </div>
                 </div>
               </li>
-            ))}
+              );
+            })}
           </ul>
         )}
       </section>

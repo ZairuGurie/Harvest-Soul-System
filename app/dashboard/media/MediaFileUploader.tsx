@@ -26,7 +26,6 @@ type UploadedMedia = {
 const initial: ContentState = null;
 
 async function uploadViaSignedOrProxy(file: File): Promise<UploadedMedia> {
-  // Prefer direct-to-Storage signed upload (avoids Next/Vercel body limits).
   const prepRes = await fetch("/api/posts/media", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -49,7 +48,6 @@ async function uploadViaSignedOrProxy(file: File): Promise<UploadedMedia> {
           fileSizeBytes: number;
         };
         error?: string;
-        maxLabel?: string;
       }
     | null;
 
@@ -72,7 +70,6 @@ async function uploadViaSignedOrProxy(file: File): Promise<UploadedMedia> {
     };
   }
 
-  // Fallback: proxy through Next (smaller files / older environments).
   const uploadFd = new FormData();
   uploadFd.append("media", file, file.name);
   const res = await fetch("/api/posts/media", { method: "POST", body: uploadFd });
@@ -85,7 +82,11 @@ async function uploadViaSignedOrProxy(file: File): Promise<UploadedMedia> {
   return json.uploads[0];
 }
 
-export default function PostComposer() {
+/**
+ * Upload photos/videos from device into Harvest Souls storage.
+ * Preferred path when Facebook embeds fail (private / multi-photo posts).
+ */
+export default function MediaFileUploader() {
   const [state, formAction] = useActionState(createPost, initial);
   const [pending, startTransition] = useTransition();
   const [uploading, setUploading] = useState(false);
@@ -93,8 +94,8 @@ export default function PostComposer() {
   const [localError, setLocalError] = useState<string | null>(null);
   const [caption, setCaption] = useState("");
   const [title, setTitle] = useState("");
-  const [status, setStatus] = useState("PUBLISHED");
   const [previews, setPreviews] = useState<Preview[]>([]);
+  const [dragOver, setDragOver] = useState(false);
   const pickerRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -107,7 +108,6 @@ export default function PostComposer() {
     if (!state?.success) return;
     setCaption("");
     setTitle("");
-    setStatus("PUBLISHED");
     setLocalError(null);
     setProgress(null);
     setPreviews((prev) => {
@@ -154,37 +154,32 @@ export default function PostComposer() {
     setLocalError(null);
     setProgress(null);
 
-    if (!caption.trim() && previews.length === 0) {
-      setLocalError("Add a caption or attach at least one photo/video.");
+    if (previews.length === 0) {
+      setLocalError("Select at least one photo or video to upload.");
       return;
     }
 
-    let uploads: UploadedMedia[] = [];
-
-    if (previews.length > 0) {
-      setUploading(true);
-      try {
-        for (let i = 0; i < previews.length; i++) {
-          setProgress(`Uploading ${i + 1} of ${previews.length}…`);
-          uploads.push(await uploadViaSignedOrProxy(previews[i].file));
-        }
-        setProgress("Saving post…");
-      } catch (err) {
-        setLocalError(err instanceof Error ? err.message : "Media upload failed.");
-        setProgress(null);
-        return;
-      } finally {
-        setUploading(false);
+    setUploading(true);
+    const uploads: UploadedMedia[] = [];
+    try {
+      for (let i = 0; i < previews.length; i++) {
+        setProgress(`Uploading ${i + 1} of ${previews.length}…`);
+        uploads.push(await uploadViaSignedOrProxy(previews[i].file));
       }
+      setProgress("Saving…");
+    } catch (err) {
+      setLocalError(err instanceof Error ? err.message : "Media upload failed.");
+      setProgress(null);
+      return;
+    } finally {
+      setUploading(false);
     }
 
     const fd = new FormData();
     fd.set("content", caption);
     fd.set("title", title);
-    fd.set("status", status === "DRAFT" ? "DRAFT" : "PUBLISHED");
-    if (uploads.length > 0) {
-      fd.set("media_json", JSON.stringify(uploads));
-    }
+    fd.set("status", "PUBLISHED");
+    fd.set("media_json", JSON.stringify(uploads));
 
     startTransition(() => {
       formAction(fd);
@@ -195,39 +190,32 @@ export default function PostComposer() {
   const error = localError || state?.error || null;
 
   return (
-    <form onSubmit={onSubmit} className="space-y-4">
-      <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-4 dark:border-slate-700 dark:bg-slate-950/50">
-        <label className="mb-2 block text-sm font-medium">What&apos;s on your heart?</label>
-        <textarea
-          value={caption}
-          onChange={(e) => setCaption(e.target.value)}
-          placeholder="Write a caption… Share an update with photos or a video."
-          rows={4}
-          className={`${field} min-h-25 resize-y`}
-        />
-      </div>
+    <section className="rounded-xl border border-harvest-gold/30 bg-white p-6 dark:border-harvest-gold/20 dark:bg-slate-900">
+      <h2 className="font-semibold text-slate-900 dark:text-slate-100">Upload photos & videos</h2>
+      <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
+        Download files from Facebook (or your phone), then upload them here. Files are stored in
+        Harvest Souls and show on the landing page, Posts, and Media gallery — no Facebook embed
+        needed.
+      </p>
 
-      <div className="grid gap-3 sm:grid-cols-2">
-        <div>
-          <label className="mb-1 block text-sm">Title (optional)</label>
-          <input
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder="Auto from caption if empty"
-            className={field}
-          />
-        </div>
-        <div>
-          <label className="mb-1 block text-sm">Status</label>
-          <select value={status} onChange={(e) => setStatus(e.target.value)} className={field}>
-            <option value="PUBLISHED">Published</option>
-            <option value="DRAFT">Draft</option>
-          </select>
-        </div>
-      </div>
-
-      <div className="space-y-3">
-        <div className="flex flex-wrap items-center gap-2">
+      <form onSubmit={onSubmit} className="mt-4 space-y-4">
+        <div
+          className={`rounded-xl border-2 border-dashed px-4 py-8 text-center transition-colors ${
+            dragOver
+              ? "border-emerald-500 bg-emerald-50/80 dark:bg-emerald-950/30"
+              : "border-slate-200 bg-slate-50/80 dark:border-slate-700 dark:bg-slate-950/50"
+          }`}
+          onDragOver={(e) => {
+            e.preventDefault();
+            setDragOver(true);
+          }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={(e) => {
+            e.preventDefault();
+            setDragOver(false);
+            addFiles(e.dataTransfer.files);
+          }}
+        >
           <input
             ref={pickerRef}
             type="file"
@@ -236,20 +224,27 @@ export default function PostComposer() {
             className="hidden"
             onChange={(e) => addFiles(e.target.files)}
           />
-          <Button type="button" variant="outline" onClick={() => pickerRef.current?.click()}>
-            Add photos / video
+          <p className="text-sm font-medium text-slate-800 dark:text-slate-100">
+            Drag & drop photos or videos here
+          </p>
+          <p className="mt-1 text-xs text-slate-500">
+            JPG, PNG, WebP, GIF, MP4, WebM · up to 10 files · max ~100MB each
+          </p>
+          <Button
+            type="button"
+            variant="outline"
+            className="mt-4"
+            onClick={() => pickerRef.current?.click()}
+          >
+            Choose files
           </Button>
           {summary ? (
-            <span className="text-xs text-slate-500">{summary} selected</span>
-          ) : (
-            <span className="text-xs text-slate-500">
-              JPG, PNG, WebP, GIF, MP4, WebM · max 10 · up to 100MB each (plan limits apply)
-            </span>
-          )}
+            <p className="mt-2 text-xs text-emerald-700 dark:text-emerald-300">{summary} selected</p>
+          ) : null}
         </div>
 
         {previews.length > 0 ? (
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
             {previews.map((p) => (
               <div
                 key={p.id}
@@ -268,7 +263,7 @@ export default function PostComposer() {
                   type="button"
                   onClick={() => removePreview(p.id)}
                   className="absolute right-2 top-2 rounded-full bg-black/70 px-2 py-0.5 text-xs text-white hover:bg-black"
-                  aria-label="Remove attachment"
+                  aria-label="Remove file"
                 >
                   ×
                 </button>
@@ -276,15 +271,45 @@ export default function PostComposer() {
             ))}
           </div>
         ) : null}
-      </div>
 
-      <div className="flex flex-wrap items-center gap-3">
-        <Button type="submit" variant="primary" disabled={busy}>
-          {uploading ? progress || "Uploading media…" : pending ? "Publishing…" : "Publish post"}
-        </Button>
-        {error ? <p className="text-sm text-red-600">{error}</p> : null}
-        {state?.success ? <p className="text-sm text-emerald-700">{state.success}</p> : null}
-      </div>
-    </form>
+        <div>
+          <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">
+            Caption (optional)
+          </label>
+          <textarea
+            value={caption}
+            onChange={(e) => setCaption(e.target.value)}
+            placeholder="JOIN A LIFEGROUP. GROW IN FAITH…"
+            rows={3}
+            className={field}
+          />
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">
+            Title (optional)
+          </label>
+          <input
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="Auto from caption if empty"
+            className={field}
+          />
+        </div>
+
+        <div className="flex flex-wrap items-center gap-3">
+          <Button type="submit" variant="primary" disabled={busy || previews.length === 0}>
+            {uploading
+              ? progress || "Uploading…"
+              : pending
+                ? "Publishing…"
+                : "Upload & publish"}
+          </Button>
+          {error ? <p className="text-sm text-red-600">{error}</p> : null}
+          {state?.success ? (
+            <p className="text-sm text-emerald-700 dark:text-emerald-300">{state.success}</p>
+          ) : null}
+        </div>
+      </form>
+    </section>
   );
 }

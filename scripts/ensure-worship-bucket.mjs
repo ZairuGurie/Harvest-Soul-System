@@ -19,7 +19,7 @@ console.log(
 
 const create = await s.storage.createBucket("worship-media", {
   public: true,
-  fileSizeLimit: 50 * 1024 * 1024,
+  fileSizeLimit: 100 * 1024 * 1024,
 });
 console.log("create worship-media:", create.error?.message || "ok");
 

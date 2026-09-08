@@ -25,7 +25,7 @@ export default async function SongsPage() {
                 Songs
               </h1>
               <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
-                Listen to MP3 audio extracted from worship videos.
+                Listen to MP3 uploads and YouTube worship tracks.
               </p>
             </div>
             <Button variant="ghost" href="/">

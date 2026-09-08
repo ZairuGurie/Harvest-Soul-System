@@ -80,23 +80,54 @@ export default function SermonComposer() {
     }
 
     // Uploaded file becomes the playable video_url (reliable hover preview).
+    // Prefer signed direct-to-Storage so large files are not overwritten and stay unique.
     if (preview) {
       setUploading(true);
       try {
-        const uploadFd = new FormData();
-        uploadFd.append("media", preview.file, preview.file.name);
-        const res = await fetch("/api/posts/media", {
+        const prepRes = await fetch("/api/posts/media", {
           method: "POST",
-          body: uploadFd,
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            mode: "sign",
+            fileName: preview.file.name,
+            mimeType: preview.file.type || "video/mp4",
+            fileSize: preview.file.size,
+          }),
         });
-        const json = (await res.json().catch(() => null)) as
-          | { uploads?: UploadedMedia[]; error?: string }
+        const prepJson = (await prepRes.json().catch(() => null)) as
+          | {
+              upload?: { signedUrl: string; path: string; publicUrl: string };
+              error?: string;
+            }
           | null;
-        if (!res.ok || !json?.uploads?.[0]) {
-          setLocalError(json?.error || "Video upload failed.");
-          return;
+
+        if (prepRes.ok && prepJson?.upload?.signedUrl) {
+          const put = await fetch(prepJson.upload.signedUrl, {
+            method: "PUT",
+            headers: { "Content-Type": preview.file.type || "video/mp4" },
+            body: preview.file,
+          });
+          if (!put.ok) {
+            setLocalError("Video upload to storage failed.");
+            return;
+          }
+          fd.set("video_url", prepJson.upload.publicUrl);
+        } else {
+          const uploadFd = new FormData();
+          uploadFd.append("media", preview.file, preview.file.name);
+          const res = await fetch("/api/posts/media", {
+            method: "POST",
+            body: uploadFd,
+          });
+          const json = (await res.json().catch(() => null)) as
+            | { uploads?: UploadedMedia[]; error?: string }
+            | null;
+          if (!res.ok || !json?.uploads?.[0]) {
+            setLocalError(json?.error || prepJson?.error || "Video upload failed.");
+            return;
+          }
+          fd.set("video_url", json.uploads[0].url);
         }
-        fd.set("video_url", json.uploads[0].url);
         if (link) fd.set("external_url", link);
       } catch {
         setLocalError("Video upload failed. Please try again.");
@@ -168,7 +199,7 @@ export default function SermonComposer() {
             <Button type="button" variant="outline" onClick={() => pickerRef.current?.click()}>
               Choose video file
             </Button>
-            <span className="text-xs text-slate-500">MP4 / WebM / MOV · max 50MB</span>
+            <span className="text-xs text-slate-500">MP4 / WebM / MOV · up to 100MB (plan limits apply)</span>
           </div>
 
           {preview ? (

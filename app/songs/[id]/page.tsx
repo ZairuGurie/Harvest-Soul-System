@@ -1,4 +1,5 @@
 import Button from "@/components/ui/Button";
+import { parseVideoUrl } from "@/lib/media/videoUrl";
 import { supabase } from "@/lib/supabaseClient";
 
 export default async function SongDetailPage({
@@ -32,6 +33,8 @@ export default async function SongDetailPage({
   }
 
   const category = (data.category || "WORSHIP").toUpperCase() === "PRAISE" ? "Praise" : "Worship";
+  const yt = !data.audio_url ? parseVideoUrl(data.video_url) : null;
+  const isYoutube = yt?.provider === "youtube" && !!yt.embedUrl;
 
   return (
     <div className="container mx-auto max-w-2xl px-4 py-8 sm:py-12">
@@ -56,8 +59,23 @@ export default async function SongDetailPage({
               </h2>
               <audio controls src={data.audio_url} className="mt-3 w-full" preload="metadata" />
             </div>
+          ) : isYoutube ? (
+            <div>
+              <h2 className="text-sm font-semibold uppercase tracking-[0.14em] text-slate-500">
+                Listen (YouTube)
+              </h2>
+              <div className="mt-3 overflow-hidden rounded-xl bg-black aspect-video">
+                <iframe
+                  title={`${data.title} on YouTube`}
+                  src={yt.embedUrl}
+                  className="h-full w-full"
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                  allowFullScreen
+                />
+              </div>
+            </div>
           ) : (
-            <p className="text-sm text-slate-500">No MP3 audio available for this song.</p>
+            <p className="text-sm text-slate-500">No playable audio available for this song.</p>
           )}
 
           {data.lyrics ? (

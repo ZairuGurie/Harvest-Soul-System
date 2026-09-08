@@ -5,6 +5,7 @@ import {
   removeWorshipStoragePaths,
   uploadWorshipVideoAndConvert,
 } from "@/lib/media/worship";
+import { formatBytesLabel, getMaxUploadBytes } from "@/lib/media/limits";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -21,7 +22,9 @@ export async function POST(request: Request) {
       formData = await request.formData();
     } catch {
       return NextResponse.json(
-        { error: "Invalid upload form data. The file may be too large for the server." },
+        {
+          error: `Invalid upload form data. The file may exceed the server limit (max ${formatBytesLabel(getMaxUploadBytes())}).`,
+        },
         { status: 400 }
       );
     }
@@ -40,7 +43,10 @@ export async function POST(request: Request) {
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unexpected upload error.";
     console.error("[worship/upload]", message);
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json(
+      { error: "Upload or conversion failed. Try a smaller video or try again later." },
+      { status: 500 }
+    );
   }
 }
 
@@ -53,6 +59,6 @@ export async function DELETE(request: Request) {
   const body = (await request.json().catch(() => null)) as
     | { paths?: string[]; bucket?: string }
     | null;
-  await removeWorshipStoragePaths(body?.paths ?? [], body?.bucket);
+  await removeWorshipStoragePaths(body?.paths ?? [], body?.bucket, user.id);
   return NextResponse.json({ ok: true });
 }

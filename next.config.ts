@@ -7,9 +7,10 @@ const nextConfig: NextConfig = {
   serverExternalPackages: ["ffmpeg-static"],
   experimental: {
     serverActions: {
-      bodySizeLimit: "50mb",
+      // Align with MEDIA_MAX_UPLOAD_BYTES default (100MB). Supabase plan may still be lower.
+      bodySizeLimit: "100mb",
     },
-    proxyClientMaxBodySize: "50mb",
+    proxyClientMaxBodySize: "100mb",
   },
   images: {
     remotePatterns: [

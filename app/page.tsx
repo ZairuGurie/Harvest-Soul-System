@@ -11,6 +11,10 @@ import BirthdaysPanel from "@/components/birthdays/BirthdaysPanel";
 import UpcomingEventsPanel, { type UpcomingEvent } from "@/components/events/UpcomingEventsPanel";
 import { isUpcomingOrToday } from "@/lib/events/format";
 import WorshipPanel, { type WorshipTrack } from "@/components/worship/WorshipPanel";
+import {
+  isPlayableWorshipTrack,
+  pickFeaturedWorshipTrack,
+} from "@/lib/media/worshipPlayback";
 
 type Post = { id: string; title: string; excerpt?: string; created_at?: string };
 type Announcement = {
@@ -26,7 +30,7 @@ export default async function Home() {
     { data: posts },
     announcementsResult,
     { data: events },
-    { data: sermons },
+    sermonsResult,
     mediaResult,
     songsResult,
     birthdays,
@@ -36,8 +40,8 @@ export default async function Home() {
     supabase.from('events').select('id,title,event_date,start_time,location').order('event_date', { ascending: true }).limit(5),
     supabase
       .from("sermons")
-      .select("id,title,speaker,sermon_date,description,video_url")
-      .order("sermon_date", { ascending: false })
+      .select("id,title,speaker,sermon_date,description,video_url,is_featured")
+      .eq("is_featured", true)
       .limit(1),
     supabase.from('media').select('id,title,url,thumbnail_url,type,post_id').order('created_at', { ascending: false }).limit(6),
     supabase
@@ -46,7 +50,7 @@ export default async function Home() {
       .eq("visibility", "PUBLIC")
       .order("is_featured", { ascending: false })
       .order("created_at", { ascending: false })
-      .limit(1),
+      .limit(24),
     getBirthdaysThisMonth(),
   ]);
 
@@ -74,15 +78,32 @@ export default async function Home() {
   const eventsList = ((events ?? []) as UpcomingEvent[])
     .filter((e) => isUpcomingOrToday(e.event_date))
     .slice(0, 5);
-  const featuredSermon = ((sermons ?? [])[0] as FeaturedSermon | undefined) ?? null;
-  let featuredWorship: WorshipTrack | null = ((songsResult.data ?? [])[0] as WorshipTrack | undefined) ?? null;
-  if (songsResult.error) {
+
+  let featuredSermon = ((sermonsResult.data ?? [])[0] as FeaturedSermon | undefined) ?? null;
+  if (sermonsResult.error || !featuredSermon) {
+    // No sticky featured yet (migration missing or none selected) — show latest without deleting others.
+    const fallback = await supabase
+      .from("sermons")
+      .select("id,title,speaker,sermon_date,description,video_url")
+      .order("sermon_date", { ascending: false })
+      .limit(1);
+    if (!featuredSermon) {
+      featuredSermon = ((fallback.data ?? [])[0] as FeaturedSermon | undefined) ?? null;
+    }
+  }
+  let worshipTracks = ((songsResult.data ?? []) as WorshipTrack[]).filter(isPlayableWorshipTrack);
+  let featuredWorship: WorshipTrack | null = pickFeaturedWorshipTrack(worshipTracks);
+  if (songsResult.error || worshipTracks.length === 0) {
     const fallback = await supabase
       .from("songs")
-      .select("id,title,artist")
+      .select("id,title,artist,category,audio_url,video_url,is_featured")
       .order("created_at", { ascending: false })
-      .limit(1);
-    featuredWorship = ((fallback.data ?? [])[0] as WorshipTrack | undefined) ?? null;
+      .limit(24);
+    const fallbackTracks = ((fallback.data ?? []) as WorshipTrack[]).filter(isPlayableWorshipTrack);
+    if (fallbackTracks.length > 0) {
+      worshipTracks = fallbackTracks;
+      featuredWorship = pickFeaturedWorshipTrack(fallbackTracks) ?? featuredWorship;
+    }
   }
   const monthLabel = new Date().toLocaleString(undefined, { month: "long" });
 
@@ -208,7 +229,7 @@ export default async function Home() {
           </div>
         </Card>
 
-        <WorshipPanel track={featuredWorship} />
+        <WorshipPanel track={featuredWorship} tracks={worshipTracks} />
       </section>
 
       <section className="mb-12">

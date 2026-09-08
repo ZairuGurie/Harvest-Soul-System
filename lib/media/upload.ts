@@ -1,4 +1,11 @@
 import { createAdminClient } from "@/lib/supabase/server";
+import {
+  buildUniqueStoragePath,
+  formatBytesLabel,
+  getMaxUploadBytes,
+  isPathOwnedByUser,
+  sanitizeStorageFileName,
+} from "@/lib/media/limits";
 
 export const POST_MEDIA_BUCKET = "post-media";
 
@@ -12,7 +19,6 @@ const ALLOWED_MIME = new Set([
   "video/quicktime",
 ]);
 
-const MAX_BYTES = 50 * 1024 * 1024; // 50MB
 const MAX_FILES = 10;
 
 export type UploadedMedia = {
@@ -21,21 +27,33 @@ export type UploadedMedia = {
   type: "PHOTO" | "VIDEO";
   mimeType: string;
   fileName: string;
+  fileSizeBytes?: number;
 };
 
-function sanitizeFileName(name: string) {
-  return name.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 120);
-}
+export { sanitizeStorageFileName };
 
 export async function ensurePostMediaBucket() {
   const admin = createAdminClient();
+  const maxBytes = getMaxUploadBytes();
   const { data: buckets } = await admin.storage.listBuckets();
   const exists = (buckets ?? []).some((b) => b.id === POST_MEDIA_BUCKET || b.name === POST_MEDIA_BUCKET);
-  if (exists) return;
+  if (exists) {
+    // Best-effort bump of plan-compatible limit (ignored if provider rejects).
+    try {
+      await admin.storage.updateBucket(POST_MEDIA_BUCKET, {
+        public: true,
+        fileSizeLimit: maxBytes,
+        allowedMimeTypes: [...ALLOWED_MIME],
+      });
+    } catch {
+      // keep existing bucket settings
+    }
+    return;
+  }
 
   const { error } = await admin.storage.createBucket(POST_MEDIA_BUCKET, {
     public: true,
-    fileSizeLimit: MAX_BYTES,
+    fileSizeLimit: maxBytes,
     allowedMimeTypes: [...ALLOWED_MIME],
   });
   if (error && !/already exists|duplicate/i.test(error.message)) {
@@ -52,6 +70,7 @@ export async function uploadPostMediaFiles(
   files: File[],
   userId: string
 ): Promise<{ uploads: UploadedMedia[]; error?: string }> {
+  const maxBytes = getMaxUploadBytes();
   if (files.length === 0) return { uploads: [] };
   if (files.length > MAX_FILES) {
     return { uploads: [], error: `You can attach up to ${MAX_FILES} photos/videos.` };
@@ -64,8 +83,11 @@ export async function uploadPostMediaFiles(
         error: `Unsupported file type: ${file.type || file.name}. Use JPG, PNG, WebP, GIF, MP4, or WebM.`,
       };
     }
-    if (file.size > MAX_BYTES) {
-      return { uploads: [], error: `${file.name} is too large (max 50MB).` };
+    if (file.size > maxBytes) {
+      return {
+        uploads: [],
+        error: `${file.name} is too large (max ${formatBytesLabel(maxBytes)}).`,
+      };
     }
   }
 
@@ -75,7 +97,7 @@ export async function uploadPostMediaFiles(
 
   for (const file of files) {
     const type: "PHOTO" | "VIDEO" = file.type.startsWith("video/") ? "VIDEO" : "PHOTO";
-    const path = `${userId}/${Date.now()}-${sanitizeFileName(file.name)}`;
+    const path = buildUniqueStoragePath(userId, file.name);
     const buffer = Buffer.from(await file.arrayBuffer());
 
     const { error } = await admin.storage.from(POST_MEDIA_BUCKET).upload(path, buffer, {
@@ -84,6 +106,13 @@ export async function uploadPostMediaFiles(
     });
 
     if (error) {
+      // Roll back only objects created in this request.
+      if (uploads.length > 0) {
+        await removeStoragePaths(
+          uploads.map((u) => u.storagePath),
+          userId
+        );
+      }
       return { uploads: [], error: `Upload failed for ${file.name}: ${error.message}` };
     }
 
@@ -94,18 +123,87 @@ export async function uploadPostMediaFiles(
       type,
       mimeType: file.type,
       fileName: file.name,
+      fileSizeBytes: file.size,
     });
   }
 
   return { uploads };
 }
 
-export async function removeStoragePaths(paths: string[]) {
-  if (paths.length === 0) return;
+/**
+ * Prepare a direct-to-Storage signed upload (avoids routing large bodies through Next/Vercel).
+ * Old objects are never overwritten (unique path + upsert false on client).
+ */
+export async function preparePostMediaSignedUpload(
+  userId: string,
+  fileName: string,
+  mimeType: string,
+  fileSize: number
+): Promise<
+  | {
+      upload: {
+        bucket: string;
+        path: string;
+        token: string;
+        signedUrl: string;
+        publicUrl: string;
+        type: "PHOTO" | "VIDEO";
+        fileName: string;
+        mimeType: string;
+        fileSizeBytes: number;
+      };
+    }
+  | { error: string }
+> {
+  const maxBytes = getMaxUploadBytes();
+  if (!ALLOWED_MIME.has(mimeType)) {
+    return {
+      error: `Unsupported file type: ${mimeType || fileName}. Use JPG, PNG, WebP, GIF, MP4, or WebM.`,
+    };
+  }
+  if (fileSize <= 0 || fileSize > maxBytes) {
+    return { error: `File is too large (max ${formatBytesLabel(maxBytes)}).` };
+  }
+
+  await ensurePostMediaBucket();
+  const admin = createAdminClient();
+  const path = buildUniqueStoragePath(userId, fileName);
+  const { data, error } = await admin.storage.from(POST_MEDIA_BUCKET).createSignedUploadUrl(path);
+  if (error || !data) {
+    return { error: error?.message || "Could not prepare upload." };
+  }
+
+  const publicUrl = admin.storage.from(POST_MEDIA_BUCKET).getPublicUrl(path).data.publicUrl;
+  const type: "PHOTO" | "VIDEO" = mimeType.startsWith("video/") ? "VIDEO" : "PHOTO";
+
+  return {
+    upload: {
+      bucket: POST_MEDIA_BUCKET,
+      path,
+      token: data.token,
+      signedUrl: data.signedUrl,
+      publicUrl,
+      type,
+      fileName: sanitizeStorageFileName(fileName),
+      mimeType,
+      fileSizeBytes: fileSize,
+    },
+  };
+}
+
+export async function removeStoragePaths(paths: string[], ownerUserId?: string) {
+  const safe = paths.filter((p) => {
+    if (!p || typeof p !== "string") return false;
+    if (p.includes("..") || /^https?:\/\//i.test(p)) return false;
+    if (ownerUserId) return isPathOwnedByUser(p, ownerUserId);
+    // Without owner, only allow previously stored-looking relative keys (no traversal).
+    return !p.startsWith("/") && !p.includes("..");
+  });
+  if (safe.length === 0) return;
   try {
     const admin = createAdminClient();
-    await admin.storage.from(POST_MEDIA_BUCKET).remove(paths);
+    await admin.storage.from(POST_MEDIA_BUCKET).remove(safe);
   } catch {
-    // Best-effort cleanup
+    // Best-effort cleanup of THIS request's objects only
   }
 }

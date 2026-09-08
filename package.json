@@ -14,21 +14,21 @@
     "posts:setup-media": "node scripts/setup-post-media.mjs"
   },
   "dependencies": {
-    "@supabase/ssr": "^0.12.5",
-    "@supabase/supabase-js": "^2.114.0",
+    "@supabase/ssr": "^0.12.6",
+    "@supabase/supabase-js": "^2.116.0",
     "ffmpeg-static": "^5.3.0",
-    "next": "16.3.1",
+    "next": "16.3.4",
     "react": "19.2.8",
     "react-dom": "19.2.8"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.3.3",
-    "@types/node": "^26.2.0",
+    "@types/node": "^26.5.0",
     "@types/react": "^19.2.18",
-    "@types/react-dom": "^19.2.4",
-    "eslint": "^10.8.1",
-    "eslint-config-next": "16.3.1",
-    "pg": "^8.16.3",
+    "@types/react-dom": "^19.2.7",
+    "eslint": "^10.10.0",
+    "eslint-config-next": "16.3.4",
+    "pg": "^8.23.0",
     "tailwindcss": "^4.3.3",
     "typescript": "^7.0.2"
   }
