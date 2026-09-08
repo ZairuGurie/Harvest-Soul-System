@@ -49,10 +49,10 @@ export default function PostMediaGallery({
           // Post embeds (multi-photo) need more height than 16:9 video.
           const frameClass = single
             ? isFbPost
-              ? "col-span-full min-h-[28rem] sm:min-h-[32rem]"
-              : "col-span-full aspect-video max-h-[28rem]"
+              ? "col-span-full min-h-112 sm:min-h-128"
+              : "col-span-full aspect-video max-h-112"
             : isFbPost
-              ? "col-span-full min-h-[24rem] sm:col-span-2 sm:min-h-[28rem]"
+              ? "col-span-full min-h-96 sm:col-span-2 sm:min-h-112"
               : "aspect-square";
 
           return (
@@ -87,7 +87,7 @@ export default function PostMediaGallery({
                   sizes="(max-width: 768px) 100vw, 600px"
                 />
               ) : (
-                <div className="flex h-full min-h-[12rem] flex-col items-center justify-center gap-2 p-4 text-center">
+                <div className="flex h-full min-h-48 flex-col items-center justify-center gap-2 p-4 text-center">
                   <p className="text-sm text-slate-300">Media preview unavailable</p>
                   <a
                     href={item.url}

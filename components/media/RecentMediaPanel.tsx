@@ -84,7 +84,7 @@ function MediaTile({ item }: { item: RecentMediaItem }) {
           preload="metadata"
         />
       ) : external ? (
-        <div className="absolute inset-0 bg-gradient-to-br from-slate-800 to-slate-950" />
+        <div className="absolute inset-0 bg-linear-to-br from-slate-800 to-slate-950" />
       ) : src ? (
         <Image
           src={src}
@@ -95,10 +95,10 @@ function MediaTile({ item }: { item: RecentMediaItem }) {
           sizes="(max-width: 768px) 50vw, 220px"
         />
       ) : (
-        <div className="absolute inset-0 bg-gradient-to-br from-harvest-blue/30 to-harvest-green/30" />
+        <div className="absolute inset-0 bg-linear-to-br from-harvest-blue/30 to-harvest-green/30" />
       )}
 
-      <div className="absolute inset-0 bg-gradient-to-t from-black/65 via-black/10 to-transparent opacity-90" />
+      <div className="absolute inset-0 bg-linear-to-t from-black/65 via-black/10 to-transparent opacity-90" />
 
       <span className="absolute left-2 top-2 rounded bg-black/70 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">
         {badge}

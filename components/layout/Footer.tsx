@@ -40,6 +40,7 @@ export default function Footer() {
                 <li><Link href="/sermons" className="hover:text-harvest-blue">Sermons</Link></li>
                 <li><Link href="/songs" className="hover:text-harvest-blue">Songs</Link></li>
                 <li><Link href="/bible" className="hover:text-harvest-blue">Bible</Link></li>
+                <li><Link href="/guidance" className="hover:text-harvest-blue">AI Guidance</Link></li>
               </ul>
             </div>
             <div>

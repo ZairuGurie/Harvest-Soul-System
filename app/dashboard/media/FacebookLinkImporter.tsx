@@ -100,13 +100,13 @@ export default function FacebookLinkImporter() {
         {showEmbed ? (
           <div
             className={`overflow-hidden rounded-lg bg-white max-w-xl ${
-              isFbPost ? "min-h-[28rem]" : "aspect-video bg-black"
+              isFbPost ? "min-h-112" : "aspect-video bg-black"
             }`}
           >
             <iframe
               title="Facebook preview"
               src={preview.embedUrl}
-              className="h-full w-full min-h-[28rem]"
+              className="h-full w-full min-h-112"
               allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
               allowFullScreen
             />

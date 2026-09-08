@@ -49,6 +49,20 @@ const links = [
     ),
   },
   {
+    href: "/guidance",
+    title: "AI Guidance",
+    description: "Scripture-grounded questions and devotionals",
+    icon: (
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+        <path d="M12 3v18" />
+        <path d="M5 8h14" />
+        <path d="M7 12h10" />
+        <path d="M9 16h6" />
+        <circle cx="12" cy="5" r="2" />
+      </svg>
+    ),
+  },
+  {
     href: "/search",
     title: "Search",
     description: "Find posts, sermons, and more",

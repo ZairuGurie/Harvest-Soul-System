@@ -85,7 +85,7 @@ export default function LatestPostCard({
       onFocus={playPreview}
       onBlur={pausePreview}
     >
-      <div className="relative aspect-[16/10] overflow-hidden bg-gradient-to-br from-harvest-blue/20 via-slate-800 to-harvest-green/30">
+      <div className="relative aspect-16/10 overflow-hidden bg-linear-to-br from-harvest-blue/20 via-slate-800 to-harvest-green/30">
         {canHoverPlay ? (
           <>
             <video
@@ -97,7 +97,7 @@ export default function LatestPostCard({
               loop
               preload="metadata"
             />
-            <div className="absolute inset-0 bg-gradient-to-t from-black/55 via-black/10 to-transparent" />
+            <div className="absolute inset-0 bg-linear-to-t from-black/55 via-black/10 to-transparent" />
             <div className="absolute inset-0 flex items-center justify-center">
               <span
                 className={`inline-flex h-14 w-14 items-center justify-center rounded-full bg-white/90 text-harvest-blue-dark shadow-lg transition-all ${
@@ -116,7 +116,7 @@ export default function LatestPostCard({
           </>
         ) : isFbEmbed ? (
           <>
-            <div className="absolute inset-0 bg-gradient-to-br from-slate-800 to-slate-950" />
+            <div className="absolute inset-0 bg-linear-to-br from-slate-800 to-slate-950" />
             <div className="absolute inset-0 flex items-center justify-center">
               <span className="inline-flex h-14 w-14 items-center justify-center rounded-full bg-white/90 text-harvest-blue-dark shadow-lg">
                 <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor">
@@ -138,11 +138,11 @@ export default function LatestPostCard({
               className="object-cover transition-transform duration-500 group-hover:scale-[1.03]"
               sizes="(max-width: 768px) 100vw, 420px"
             />
-            <div className="absolute inset-0 bg-gradient-to-t from-black/45 via-transparent to-transparent" />
+            <div className="absolute inset-0 bg-linear-to-t from-black/45 via-transparent to-transparent" />
           </>
         ) : cover?.type === "VIDEO" ? (
           <>
-            <div className="absolute inset-0 bg-gradient-to-br from-slate-800 to-slate-950" />
+            <div className="absolute inset-0 bg-linear-to-br from-slate-800 to-slate-950" />
             <div className="absolute inset-0 flex items-center justify-center">
               <span className="inline-flex h-14 w-14 items-center justify-center rounded-full bg-white/90 text-harvest-blue-dark shadow-lg">
                 <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor">

@@ -30,6 +30,7 @@ export default function Header({ user = null }: { user?: HeaderUser }) {
               <Link href="/sermons" className={navLinkClass}>Sermons</Link>
               <Link href="/songs" className={navLinkClass}>Songs</Link>
               <Link href="/bible" className={navLinkClass}>Bible</Link>
+              <Link href="/guidance" className={navLinkClass}>Guidance</Link>
               <Link href="/events" className={navLinkClass}>Events</Link>
             </nav>
           </div>
@@ -80,6 +81,7 @@ export default function Header({ user = null }: { user?: HeaderUser }) {
               <Link href="/sermons" className={`block px-3 py-2 ${navLinkClass}`}>Sermons</Link>
               <Link href="/songs" className={`block px-3 py-2 ${navLinkClass}`}>Songs</Link>
               <Link href="/bible" className={`block px-3 py-2 ${navLinkClass}`}>Bible</Link>
+              <Link href="/guidance" className={`block px-3 py-2 ${navLinkClass}`}>Guidance</Link>
               <Link href="/events" className={`block px-3 py-2 ${navLinkClass}`}>Events</Link>
               {user?.isStaff ? (
                 <Link href="/dashboard" className="block px-3 py-2 rounded text-center text-white bg-harvest-gradient mt-1">

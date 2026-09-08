@@ -97,7 +97,8 @@ const items: NavItem[] = [
       p.startsWith("/media") ||
       p.startsWith("/sermons") ||
       p.startsWith("/events") ||
-      p.startsWith("/announcements"),
+      p.startsWith("/announcements") ||
+      p.startsWith("/guidance"),
     icon: <IconMore />,
   },
 ];

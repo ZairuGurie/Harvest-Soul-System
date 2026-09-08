@@ -18,6 +18,7 @@ const superLinks = [
   { href: "/dashboard/users", label: "User Management" },
   { href: "/dashboard/stats", label: "Statistics" },
   { href: "/dashboard/audit", label: "Audit Logs" },
+  { href: "/dashboard/ai", label: "AI Guidance" },
 ];
 
 export default function DashboardSidebar({
