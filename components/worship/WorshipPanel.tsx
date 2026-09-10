@@ -101,7 +101,7 @@ export default function WorshipPanel({
               <button
                 type="button"
                 onClick={togglePlay}
-                className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-harvest-gradient text-white shadow-md transition hover:opacity-90"
+                className="hs-motion flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-harvest-gradient text-white shadow-md hover:scale-105 hover:opacity-95 hover:shadow-lg active:scale-100"
                 aria-label={playing ? "Pause" : "Play"}
               >
                 {playing ? (
@@ -178,7 +178,7 @@ export default function WorshipPanel({
                     <button
                       type="button"
                       onClick={() => selectTrack(item.id)}
-                      className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left transition ${
+                      className={`hs-motion flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left ${
                         selected
                           ? "bg-emerald-500/15 ring-1 ring-emerald-400/30"
                           : "hover:bg-white/5"
@@ -229,12 +229,12 @@ export function WorshipTrackCard({ track }: { track: WorshipTrack }) {
   return (
     <Link
       href={`/songs/${track.id}`}
-      className="group flex flex-col rounded-2xl border border-slate-200/80 bg-white/90 p-4 transition hover:-translate-y-0.5 hover:border-harvest-green/40 hover:shadow-md dark:border-white/10 dark:bg-slate-950/70 dark:hover:border-emerald-400/30"
+      className="group flex flex-col rounded-2xl border border-slate-200/80 bg-white/90 p-4 transition-all duration-200 hover:-translate-y-0.5 hover:border-harvest-green/40 hover:shadow-md dark:border-white/10 dark:bg-slate-950/70 dark:hover:border-emerald-400/30"
     >
       <span className="text-[11px] font-semibold uppercase tracking-wide text-harvest-green dark:text-emerald-300">
         {formatCategory(track.category)}
       </span>
-      <span className="mt-2 font-semibold text-slate-900 group-hover:text-harvest-green-dark dark:text-white dark:group-hover:text-emerald-200">
+      <span className="mt-2 font-semibold text-slate-900 transition-colors duration-200 group-hover:text-harvest-green-dark dark:text-white dark:group-hover:text-emerald-200">
         {track.title}
       </span>
       <span className="mt-1 text-sm text-slate-500">{track.artist || "Harvest Souls Worship"}</span>

@@ -29,7 +29,7 @@ export default function BirthdaysPanel({
   monthLabel: string;
 }) {
   return (
-    <section className="rounded-2xl bg-[#0b1220] px-5 py-5 text-white shadow-lg ring-1 ring-white/10">
+    <section className="rounded-2xl bg-[#0b1220] px-5 py-5 text-white shadow-lg ring-1 ring-white/10 transition-shadow duration-300 hover:shadow-xl hover:ring-white/15">
       <h2 className="text-xl font-bold tracking-tight text-white sm:text-2xl">
         Birthdays in {monthLabel}
       </h2>
@@ -39,11 +39,14 @@ export default function BirthdaysPanel({
           No birthdays listed for this month yet.
         </p>
       ) : (
-        <ul className="mt-5 space-y-4">
+        <ul className="mt-5 space-y-2">
           {items.map((b) => (
-            <li key={b.id} className="flex items-center gap-3.5">
+            <li
+              key={b.id}
+              className="hs-motion flex items-center gap-3.5 rounded-xl px-2 py-2 hover:bg-white/5"
+            >
               <div
-                className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full text-lg font-bold text-white shadow-md"
+                className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full text-lg font-bold text-white shadow-md transition-transform duration-200 hover:scale-105"
                 style={{
                   background:
                     "linear-gradient(135deg, #1b6db5 0%, #2b8a3e 100%)",

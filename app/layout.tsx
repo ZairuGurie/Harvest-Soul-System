@@ -25,8 +25,14 @@ export const metadata: Metadata = {
   description:
     "Harvest Souls Mission Christian Church — Growing in faith. Serving in love. Macanhan, Carmen, Cagayan de Oro City.",
   icons: {
-    icon: [{ url: "/harvest-souls-logo.png", type: "image/png" }],
-    apple: [{ url: "/harvest-souls-logo.png", type: "image/png" }],
+    icon: [
+      { url: "/favicon-16x16.png?v=2", sizes: "16x16", type: "image/png" },
+      { url: "/favicon-32x32.png?v=2", sizes: "32x32", type: "image/png" },
+      { url: "/favicon.png?v=2", type: "image/png" },
+      { url: "/harvest-souls-logo-transparent.png?v=2", type: "image/png" },
+    ],
+    apple: [{ url: "/apple-icon.png?v=2", sizes: "180x180", type: "image/png" }],
+    shortcut: ["/favicon.png?v=2"],
   },
 };
 

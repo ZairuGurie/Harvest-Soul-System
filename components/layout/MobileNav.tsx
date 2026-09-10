@@ -119,13 +119,17 @@ export default function MobileNav() {
               <Link
                 href={item.href}
                 aria-current={active ? "page" : undefined}
-                className={`flex flex-col items-center gap-1 rounded-xl px-1 py-2 text-[11px] font-medium transition-colors ${
+                className={`hs-motion group flex flex-col items-center gap-1 rounded-xl px-1 py-2 text-[11px] font-medium ${
                   active
                     ? "bg-white/10 text-emerald-300"
                     : "text-slate-400 hover:bg-white/5 hover:text-slate-100"
                 }`}
               >
-                <span className={active ? "text-emerald-300" : "text-current"}>
+                <span
+                  className={`transition-transform duration-200 ${
+                    active ? "scale-110 text-emerald-300" : "text-current group-hover:scale-110"
+                  }`}
+                >
                   {item.icon}
                 </span>
                 <span>{item.label}</span>

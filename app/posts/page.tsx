@@ -48,8 +48,8 @@ export default async function PostsPage() {
   }
 
   return (
-    <div className="container mx-auto py-8">
-      <div className="mb-6 flex items-center justify-between">
+    <div className="container mx-auto px-4 py-6 sm:py-8">
+      <div className="mb-6 flex items-center justify-between gap-3">
         <h1 className="text-2xl font-semibold">Posts</h1>
         <div>
           <Button variant="ghost" href="/posts/rss">
@@ -67,11 +67,14 @@ export default async function PostsPage() {
           list.map((p) => {
             const media = mediaByPost.get(p.id) ?? [];
             return (
-              <Card key={p.id} className="space-y-2">
-                <Link href={`/posts/${p.id}`} className="text-lg font-medium hover:underline">
+              <Card key={p.id} interactive className="group space-y-2">
+                <Link
+                  href={`/posts/${p.id}`}
+                  className="hs-motion text-lg font-medium text-slate-900 group-hover:text-harvest-blue-dark dark:text-white dark:group-hover:text-emerald-200"
+                >
                   {p.title}
                 </Link>
-                <p className="text-sm text-slate-700 dark:text-slate-200 whitespace-pre-wrap">
+                <p className="whitespace-pre-wrap text-sm text-slate-700 dark:text-slate-200">
                   {p.content || p.excerpt || ""}
                 </p>
                 <PostMediaGallery items={media} />

@@ -89,12 +89,12 @@ const links = [
 
 export default function MorePage() {
   return (
-    <div className="container mx-auto max-w-lg px-4 py-8 sm:py-12">
-      <section className="overflow-hidden rounded-3xl border border-slate-200/70 bg-white/92 shadow-xl backdrop-blur-md dark:border-white/10 dark:bg-[#0b1220]/92">
-        <header className="border-b border-slate-200/70 px-6 py-6 dark:border-white/10">
+    <div className="container mx-auto max-w-lg px-3 py-6 sm:px-4 sm:py-12">
+      <section className="hs-motion overflow-hidden rounded-2xl border border-slate-200/70 bg-white/92 shadow-xl backdrop-blur-md transition-shadow duration-300 hover:shadow-2xl sm:rounded-3xl dark:border-white/10 dark:bg-[#0b1220]/92">
+        <header className="border-b border-slate-200/70 px-5 py-5 sm:px-6 sm:py-6 dark:border-white/10">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-harvest-blue dark:text-emerald-300">
+              <p className="text-xs font-semibold tracking-[0.2em] text-harvest-blue uppercase dark:text-emerald-300">
                 Menu
               </p>
               <h1 className="mt-2 text-2xl font-bold tracking-tight text-slate-900 dark:text-white">
@@ -115,13 +115,13 @@ export default function MorePage() {
             <li key={link.href}>
               <Link
                 href={link.href}
-                className="flex items-center gap-4 px-6 py-4 transition hover:bg-slate-50/80 dark:hover:bg-white/5"
+                className="hs-motion group flex items-center gap-4 px-5 py-4 sm:px-6 hover:bg-slate-50/90 dark:hover:bg-white/5"
               >
-                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-harvest-gradient text-white shadow-sm">
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-harvest-gradient text-white shadow-sm transition-transform duration-200 group-hover:scale-105 group-hover:shadow-md">
                   {link.icon}
                 </span>
                 <span className="min-w-0 flex-1">
-                  <span className="block font-semibold text-slate-900 dark:text-white">
+                  <span className="block font-semibold text-slate-900 transition-colors duration-200 group-hover:text-harvest-blue-dark dark:text-white dark:group-hover:text-emerald-200">
                     {link.title}
                   </span>
                   <span className="mt-0.5 block text-sm text-slate-500 dark:text-slate-400">
@@ -135,7 +135,7 @@ export default function MorePage() {
                   fill="none"
                   stroke="currentColor"
                   strokeWidth="2"
-                  className="shrink-0 text-slate-400"
+                  className="shrink-0 text-slate-400 transition-transform duration-200 group-hover:translate-x-0.5 group-hover:text-harvest-blue dark:group-hover:text-emerald-300"
                   aria-hidden
                 >
                   <path d="M9 18l6-6-6-6" />

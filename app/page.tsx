@@ -131,33 +131,33 @@ export default async function Home() {
     <div className="flex flex-col flex-1 font-sans">
       {/* Hero */}
       <section className="mb-8">
-        <Card className="flex flex-col md:flex-row items-center gap-6 p-8 md:p-10" accent>
+        <Card className="hs-motion flex flex-col items-center gap-6 p-6 transition-shadow duration-300 hover:shadow-xl sm:p-8 md:flex-row md:p-10" accent>
           <div className="flex-1">
-            <p className="text-sm font-bold uppercase tracking-wider text-harvest-green-dark dark:text-emerald-300">
+            <p className="text-sm font-bold tracking-wider text-harvest-green-dark uppercase dark:text-emerald-300">
               Harvest Souls Mission Christian Church
             </p>
-            <h1 className="mt-3 text-3xl md:text-5xl font-bold leading-tight">
+            <h1 className="mt-3 text-3xl leading-tight font-bold md:text-5xl">
               <span className="text-harvest-blue-dark dark:text-white">Growing in Faith.</span>{' '}
               <span className="text-harvest-green-dark dark:text-emerald-300">Serving in Love.</span>
             </h1>
-            <p className="mt-4 text-base md:text-lg text-slate-800 dark:text-slate-100 max-w-2xl leading-relaxed">
+            <p className="mt-4 max-w-2xl text-base leading-relaxed text-slate-800 md:text-lg dark:text-slate-100">
               A digital home for church life, worship, and community in Macanhan, Carmen,
               Cagayan de Oro City.
             </p>
 
-            <div className="mt-6 flex gap-3">
+            <div className="mt-6 flex flex-wrap gap-3">
               <Button variant="primary" className="px-5" href="/sermons">Explore Sermons</Button>
               <Button variant="ghost" className="px-5" href="/bible">Read the Bible</Button>
             </div>
           </div>
 
-          <div className="w-full md:w-72 shrink-0">
+          <div className="w-full shrink-0 md:w-72">
             <Image
               src="/harvest-souls-logo.png"
               alt="Harvest Souls Mission Christian Church logo"
               width={288}
               height={288}
-              className="w-full rounded-full object-cover shadow-lg ring-4 ring-harvest-gold/50"
+              className="hs-motion w-full rounded-full object-cover shadow-lg ring-4 ring-harvest-gold/50 hover:scale-[1.02] hover:ring-harvest-gold/80 hover:shadow-xl"
               style={{ width: "100%", height: "auto" }}
               priority
             />

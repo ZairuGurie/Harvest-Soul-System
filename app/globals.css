@@ -98,3 +98,71 @@ h1, h2, h3, h4 {
 .animate-bible-rise {
   animation: bible-rise 0.45s ease-out both;
 }
+
+/* Site-wide subtle motion (Guidance + shared surfaces) */
+@keyframes hs-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes guidance-soft-pulse {
+  0%,
+  100% {
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.animate-guidance-fade-up,
+.animate-hs-fade-up {
+  animation: hs-fade-up 0.4s ease-out both;
+}
+
+.guidance-loading-dot {
+  animation: guidance-soft-pulse 1.2s ease-in-out infinite;
+}
+
+/* Interactive surfaces: cards, nav, lists */
+.hs-motion {
+  transition-property: color, background-color, border-color, box-shadow, transform, opacity;
+  transition-duration: 200ms;
+  transition-timing-function: ease-out;
+}
+
+.hs-card-interactive {
+  transition-property: box-shadow, transform, border-color;
+  transition-duration: 250ms;
+  transition-timing-function: ease-out;
+}
+
+.hs-card-interactive:hover {
+  transform: translateY(-2px);
+  box-shadow:
+    0 12px 28px -12px rgba(27, 109, 181, 0.28),
+    0 4px 12px -4px rgba(15, 23, 42, 0.12);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-bible-rise,
+  .animate-guidance-fade-up,
+  .animate-hs-fade-up,
+  .guidance-loading-dot {
+    animation: none !important;
+  }
+
+  .guidance-motion,
+  .hs-motion,
+  .hs-card-interactive,
+  .hs-card-interactive:hover {
+    transition: none !important;
+    transform: none !important;
+  }
+}

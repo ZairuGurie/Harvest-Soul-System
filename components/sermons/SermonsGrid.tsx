@@ -130,7 +130,7 @@ function SermonCard({ sermon }: { sermon: FeaturedSermon }) {
       </div>
 
       <div className="space-y-1 p-4">
-        <h3 className="font-semibold text-slate-900 group-hover:text-harvest-blue-dark dark:text-white dark:group-hover:text-emerald-200">
+        <h3 className="font-semibold text-slate-900 transition-colors duration-200 group-hover:text-harvest-blue-dark dark:text-white dark:group-hover:text-emerald-200">
           {sermon.title}
         </h3>
         <p className="text-sm text-slate-600 dark:text-slate-300">

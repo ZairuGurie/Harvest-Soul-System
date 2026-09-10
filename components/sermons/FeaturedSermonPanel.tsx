@@ -197,7 +197,7 @@ export default function FeaturedSermonPanel({
                 href={sermon.video_url}
                 target="_blank"
                 rel="noreferrer"
-                className="inline-flex items-center justify-center rounded-lg border border-harvest-blue/30 px-4 py-2 text-sm font-medium text-harvest-blue-dark hover:bg-harvest-blue/5 dark:border-sky-700 dark:text-sky-200"
+                className="hs-motion inline-flex items-center justify-center rounded-lg border border-harvest-blue/30 px-4 py-2 text-sm font-medium text-harvest-blue-dark hover:-translate-y-0.5 hover:border-harvest-blue/50 hover:bg-harvest-blue/5 hover:shadow-sm dark:border-sky-700 dark:text-sky-200 dark:hover:bg-sky-900/30"
               >
                 Open Facebook
               </a>

@@ -58,7 +58,7 @@ export default function PostMediaGallery({
           return (
             <div
               key={item.id}
-              className={`relative overflow-hidden rounded-xl bg-slate-900 ${frameClass}`}
+              className={`group/media relative overflow-hidden rounded-xl bg-slate-900 transition-shadow duration-300 hover:shadow-lg ${frameClass}`}
             >
               {useEmbed ? (
                 <iframe
@@ -83,7 +83,7 @@ export default function PostMediaGallery({
                   alt={item.caption || "Post photo"}
                   fill
                   unoptimized
-                  className="object-cover"
+                  className="object-cover transition-transform duration-500 group-hover/media:scale-[1.03]"
                   sizes="(max-width: 768px) 100vw, 600px"
                 />
               ) : (
