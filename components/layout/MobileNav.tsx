@@ -98,13 +98,19 @@ const items: NavItem[] = [
       p.startsWith("/sermons") ||
       p.startsWith("/events") ||
       p.startsWith("/announcements") ||
-      p.startsWith("/guidance"),
+      p.startsWith("/guidance") ||
+      p.startsWith("/game"),
     icon: <IconMore />,
   },
 ];
 
 export default function MobileNav() {
   const pathname = usePathname() || "/";
+
+  // Play session owns its own movement UI; hide site nav so touches/keys don't conflict.
+  if (pathname.startsWith("/game/play")) {
+    return null;
+  }
 
   return (
     <nav

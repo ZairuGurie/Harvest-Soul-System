@@ -63,6 +63,17 @@ const links = [
     ),
   },
   {
+    href: "/game",
+    title: "STAND FIRM",
+    description: "A Christian choice & adventure about avoiding compromise",
+    icon: (
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+        <path d="M12 3 4 7v5c0 5 3.5 8.5 8 9 4.5-.5 8-4 8-9V7l-8-4z" />
+        <path d="M9 12l2 2 4-4" />
+      </svg>
+    ),
+  },
+  {
     href: "/search",
     title: "Search",
     description: "Find posts, sermons, and more",

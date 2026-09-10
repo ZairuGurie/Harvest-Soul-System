@@ -64,6 +64,11 @@ export default function Footer() {
                     AI Guidance
                   </Link>
                 </li>
+                <li>
+                  <Link href="/game" className={footerLinkClass}>
+                    STAND FIRM
+                  </Link>
+                </li>
               </ul>
             </div>
             <div>

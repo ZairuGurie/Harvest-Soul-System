@@ -43,6 +43,9 @@ export default function Header({ user = null }: { user?: HeaderUser }) {
               <Link href="/guidance" className={navLinkClass}>
                 Guidance
               </Link>
+              <Link href="/game" className={navLinkClass}>
+                Game
+              </Link>
               <Link href="/events" className={navLinkClass}>
                 Events
               </Link>
@@ -118,6 +121,9 @@ export default function Header({ user = null }: { user?: HeaderUser }) {
               </Link>
               <Link href="/guidance" className={`block px-3 py-2.5 ${navLinkClass}`}>
                 Guidance
+              </Link>
+              <Link href="/game" className={`block px-3 py-2.5 ${navLinkClass}`}>
+                Game
               </Link>
               <Link href="/events" className={`block px-3 py-2.5 ${navLinkClass}`}>
                 Events

@@ -3,13 +3,14 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { writeAuditLog } from "@/lib/audit/log";
+import { safeInternalPath } from "@/lib/auth/safeRedirect";
 
 export type LoginState = { error?: string } | null;
 
 export async function loginAction(_prev: LoginState, formData: FormData): Promise<LoginState> {
   const email = String(formData.get("email") || "").trim();
   const password = String(formData.get("password") || "");
-  const next = String(formData.get("next") || "/dashboard");
+  const next = safeInternalPath(String(formData.get("next") || ""), "/dashboard");
 
   if (!email || !password) {
     return { error: "Email and password are required." };

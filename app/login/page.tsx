@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { getAuthUser } from "@/lib/auth/session";
 import { isStaff } from "@/lib/auth/roles";
+import { safeInternalPath } from "@/lib/auth/safeRedirect";
 import Image from "next/image";
 import Card from "@/components/ui/Card";
 import LoginForm from "./LoginForm";
@@ -11,7 +12,7 @@ export default async function LoginPage({
   searchParams: Promise<{ next?: string }>;
 }) {
   const params = await searchParams;
-  const nextPath = params.next && params.next.startsWith("/") ? params.next : "/dashboard";
+  const nextPath = safeInternalPath(params.next, "/dashboard");
 
   // Only send already-authenticated staff to the dashboard (never on stale cookies alone).
   const user = await getAuthUser();
