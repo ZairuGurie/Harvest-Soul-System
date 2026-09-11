@@ -31,6 +31,7 @@ type ScripturePayload = {
 export type ScenarioResolvePayload = {
   error?: string;
   alreadyCompleted?: boolean;
+  nextScenarioId?: string | null;
   choice?: { id: string; choiceText: string; consequence: string };
   scenario?: {
     id: string;
@@ -38,6 +39,8 @@ export type ScenarioResolvePayload = {
     explanation: string;
     reflectionPrompt: string;
     scriptureReference: string;
+    levelNumber?: number;
+    chapter?: number;
   };
   scripture?: ScripturePayload;
   progress?: {
@@ -46,6 +49,11 @@ export type ScenarioResolvePayload = {
     level: number;
     leveledUp: boolean;
     newlyEarnedAchievements: Array<{ id: string; name: string; description: string }>;
+    currentChapter?: number;
+    completedScenarioIds?: string[];
+    achievementIds?: string[];
+    choicesByScenario?: Record<string, string>;
+    decisionFlags?: string[];
   };
   saved?: boolean;
 };
@@ -103,8 +111,11 @@ export default function ScenarioOverlay({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ scenarioId, choiceId, localProgress }),
       });
-      const data = (await res.json()) as ScenarioResolvePayload;
-      if (!res.ok) throw new Error(data.error || "Unable to resolve this choice.");
+      const data = (await res.json()) as ScenarioResolvePayload & { detail?: string };
+      if (!res.ok) {
+        const detail = typeof data.detail === "string" && data.detail ? ` (${data.detail})` : "";
+        throw new Error((data.error || "Unable to resolve this choice.") + detail);
+      }
       setResult(data);
       setStep("result");
       onResolved(data);
@@ -140,9 +151,11 @@ export default function ScenarioOverlay({
           {error ? (
             <div className="rounded-xl border border-amber-500/40 bg-amber-50 px-3 py-3 text-sm text-amber-950 dark:bg-amber-950/40 dark:text-amber-100">
               <p>{error}</p>
-              <p className="mt-2 text-xs opacity-80">
-                Unable to load this game content. Please return to Game Center and try again.
-              </p>
+              {!scenario ? (
+                <p className="mt-2 text-xs opacity-80">
+                  Unable to load this game content. Please return to Game Center and try again.
+                </p>
+              ) : null}
             </div>
           ) : null}
 

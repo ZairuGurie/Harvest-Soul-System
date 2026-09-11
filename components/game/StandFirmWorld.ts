@@ -1,14 +1,16 @@
 import * as THREE from "three";
-import { NPCS, WORLD, type StandFirmBootData } from "./standFirmConfig";
+import { WORLD, type StandFirmBootData, type NpcSpot } from "./standFirmConfig";
 import { clearStandFirmInput, GAME_CONTROL_CODES, standFirmInput } from "./standFirmInput";
 import {
   NPC_LOOKS,
   PLAYER_LOOK,
   createPersonFigure,
   updatePersonMotion,
+  setPersonTalking,
   type PersonRig,
 } from "./standFirmCharacters";
-import { buildVillage } from "./standFirmVillage";
+import { buildVillage, mapDisplayName } from "./standFirmVillage";
+import { getGraphicsPreset } from "@/lib/game/quality";
 
 export { standFirmInput } from "./standFirmInput";
 
@@ -19,7 +21,10 @@ type NpcVisual = {
   ring: THREE.Mesh;
   labelSprite: THREE.Sprite;
   name: string;
+  status: "available" | "completed" | "locked";
   idlePhase: number;
+  x: number;
+  z: number;
 };
 
 const PLAYER_SPEED = 160;
@@ -92,6 +97,16 @@ function updateLabelSprite(sprite: THREE.Sprite, text: string, bg?: string, colo
   map.needsUpdate = true;
 }
 
+function statusStyle(status: NpcVisual["status"]): { bg: string; color: string; ring: number } {
+  if (status === "completed") {
+    return { bg: "rgba(16,185,129,0.92)", color: "#ecfdf5", ring: 0xf0c14a };
+  }
+  if (status === "locked") {
+    return { bg: "rgba(71,85,105,0.88)", color: "#e2e8f0", ring: 0x64748b };
+  }
+  return { bg: "rgba(255,255,255,0.88)", color: "#0b1220", ring: 0xffffff };
+}
+
 function collides(
   x: number,
   z: number,
@@ -107,19 +122,59 @@ export type StandFirmGameHandle = {
   destroy: (removeCanvas?: boolean) => void;
   setLocked: (locked: boolean) => void;
   markCompleted: (scenarioId: string) => void;
+  /** Refresh all NPC locked/available/completed visuals from current progress. */
+  syncNpcStatuses: (
+    statuses: Record<string, "available" | "completed" | "locked">
+  ) => void;
+  focusNpc: (scenarioId: string | null) => void;
+  setGraphicsQuality: (quality: "low" | "medium" | "high") => void;
 };
+
+function webglAvailable(): boolean {
+  try {
+    const canvas = document.createElement("canvas");
+    return Boolean(
+      canvas.getContext("webgl2") ||
+        canvas.getContext("webgl") ||
+        canvas.getContext("experimental-webgl")
+    );
+  } catch {
+    return false;
+  }
+}
 
 export function createStandFirmGame(
   parent: HTMLElement,
   boot: StandFirmBootData
 ): StandFirmGameHandle {
-  const scene = new THREE.Scene();
+  if (!webglAvailable()) {
+    boot.onError?.(
+      "STAND FIRM requires WebGL-enabled browser graphics. Please use a modern browser or device."
+    );
+    return {
+      destroy() {},
+      setLocked() {},
+      markCompleted() {},
+      syncNpcStatuses() {},
+      focusNpc() {},
+      setGraphicsQuality() {},
+    };
+  }
 
+  const preset = getGraphicsPreset(boot.graphicsQuality);
+  const mapId = boot.mapId || "village_center";
+  const npcList: NpcSpot[] = boot.npcs?.length ? boot.npcs : [];
+
+  const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(48, 1, 1, 2800);
-  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  const renderer = new THREE.WebGLRenderer({
+    antialias: preset.antialias,
+    alpha: false,
+    powerPreference: preset.quality === "low" ? "low-power" : "high-performance",
+  });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, preset.pixelRatioCap));
   renderer.outputColorSpace = THREE.SRGBColorSpace;
-  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.enabled = preset.shadows;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.05;
@@ -132,19 +187,25 @@ export function createStandFirmGame(
   scene.add(hemi);
   const sun = new THREE.DirectionalLight(0xfff1d6, 1.35);
   sun.position.set(320, 480, 180);
-  sun.castShadow = true;
-  sun.shadow.mapSize.set(2048, 2048);
-  sun.shadow.camera.left = -560;
-  sun.shadow.camera.right = 560;
-  sun.shadow.camera.top = 560;
-  sun.shadow.camera.bottom = -560;
-  sun.shadow.bias = -0.0002;
+  sun.castShadow = preset.shadows;
+  if (preset.shadows) {
+    sun.shadow.mapSize.set(preset.shadowMapSize, preset.shadowMapSize);
+    sun.shadow.camera.left = -560;
+    sun.shadow.camera.right = 560;
+    sun.shadow.camera.top = 560;
+    sun.shadow.camera.bottom = -560;
+    sun.shadow.bias = -0.0002;
+  }
   scene.add(sun);
   scene.add(new THREE.AmbientLight(0xffffff, 0.22));
 
-  const blockers = buildVillage(scene);
+  const blockers = buildVillage(scene, mapId);
 
-  const title = makeLabelSprite("STAND FIRM VILLAGE", "rgba(248,250,252,0.92)", "#0b1220");
+  const title = makeLabelSprite(
+    mapDisplayName(mapId).toUpperCase(),
+    "rgba(248,250,252,0.92)",
+    "#0b1220"
+  );
   title.scale.set(220, 36, 1);
   title.position.set(WORLD.width / 2, 78, 40);
   scene.add(title);
@@ -158,12 +219,13 @@ export function createStandFirmGame(
   const playerLabel = makeLabelSprite("You", "#0b3d91", "#ffffff");
   playerLabel.position.set(0, 58, 0);
   player.add(playerLabel);
-  player.position.set(480, 0, 500);
+  const spawn = boot.playerSpawn ?? { x: 480, z: 500 };
+  player.position.set(spawn.x, 0, spawn.z);
   scene.add(player);
 
   const completed = new Set(boot.completedScenarioIds);
   const npcVisuals: NpcVisual[] = [];
-  for (const npc of NPCS) {
+  for (const npc of npcList) {
     const look = NPC_LOOKS[npc.id] ?? {
       outfit: npc.color,
       pants: 0x334155,
@@ -173,27 +235,47 @@ export function createStandFirmGame(
     };
     const rig = createPersonFigure(look);
     const root = rig.root;
-    const done = completed.has(npc.scenarioId);
+    const status: NpcVisual["status"] =
+      npc.status ?? (completed.has(npc.scenarioId) ? "completed" : "available");
+    const style = statusStyle(status);
 
     const halo = new THREE.Mesh(
       new THREE.TorusGeometry(18, 1.6, 8, 24),
       new THREE.MeshStandardMaterial({
-        color: done ? 0xf0c14a : 0xffffff,
-        emissive: done ? 0xf0c14a : 0xffffff,
-        emissiveIntensity: 0.25,
+        color: style.ring,
+        emissive: style.ring,
+        emissiveIntensity: status === "locked" ? 0.08 : 0.25,
       })
     );
     halo.rotation.x = Math.PI / 2;
     halo.position.y = 1.5;
     root.add(halo);
 
-    const labelSprite = makeLabelSprite(done ? `${npc.name} ✓` : npc.name);
+    const labelText =
+      status === "completed"
+        ? `${npc.name} · Done`
+        : status === "locked"
+          ? `${npc.name} · Locked`
+          : npc.name;
+    const labelSprite = makeLabelSprite(labelText, style.bg, style.color);
     labelSprite.position.set(0, 58, 0);
     root.add(labelSprite);
 
-    // Face toward village center roughly
     root.rotation.y = Math.atan2(480 - npc.x, 340 - npc.y);
     root.position.set(npc.x, 0, npc.y);
+    if (status === "locked") {
+      root.traverse((obj) => {
+        if (obj instanceof THREE.Mesh && obj.material) {
+          const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+          for (const m of mats) {
+            if ("opacity" in m) {
+              (m as THREE.Material).transparent = true;
+              (m as THREE.Material).opacity = 0.55;
+            }
+          }
+        }
+      });
+    }
     scene.add(root);
     npcVisuals.push({
       scenarioId: npc.scenarioId,
@@ -202,11 +284,15 @@ export function createStandFirmGame(
       ring: halo,
       labelSprite,
       name: npc.name,
+      status,
       idlePhase: Math.random() * Math.PI * 2,
+      x: npc.x,
+      z: npc.y,
     });
   }
 
   let locked = false;
+  let focusScenarioId: string | null = null;
   let nearby: { scenarioId: string; name: string } | null = null;
   let disposed = false;
   let raf = 0;
@@ -234,11 +320,12 @@ export function createStandFirmGame(
   function onKeyDown(e: KeyboardEvent) {
     if (!inputActive() || locked) return;
     if (!GAME_CONTROL_CODES.has(e.code)) return;
-    // Keep arrows / WASD / Space inside the game — do not scroll the page or hit site nav.
     e.preventDefault();
     e.stopPropagation();
     keys.add(e.code);
     if ((e.code === "KeyE" || e.code === "Space") && nearby) {
+      const visual = npcVisuals.find((n) => n.scenarioId === nearby?.scenarioId);
+      if (visual?.status === "locked") return;
       boot.onInteract(nearby.scenarioId, nearby.name);
     }
   }
@@ -250,9 +337,45 @@ export function createStandFirmGame(
     }
     keys.delete(e.code);
   }
-  // Capture phase so game keys win over page/nav listeners while the panel is active.
   window.addEventListener("keydown", onKeyDown, true);
   window.addEventListener("keyup", onKeyUp, true);
+
+  function applyNpcStatus(
+    visual: NpcVisual,
+    status: NpcVisual["status"]
+  ) {
+    if (visual.status === status) return;
+    const prev = visual.status;
+    visual.status = status;
+    const style = statusStyle(status);
+    const labelText =
+      status === "completed"
+        ? `${visual.name} · Done`
+        : status === "locked"
+          ? `${visual.name} · Locked`
+          : visual.name;
+    updateLabelSprite(visual.labelSprite, labelText, style.bg, style.color);
+    const mat = visual.ring.material as THREE.MeshStandardMaterial;
+    mat.color.setHex(style.ring);
+    mat.emissive.setHex(style.ring);
+    mat.emissiveIntensity = status === "locked" ? 0.08 : 0.25;
+
+    // Restore full opacity when unlocking; dim when locking.
+    if (prev === "locked" || status === "locked") {
+      const opacity = status === "locked" ? 0.55 : 1;
+      visual.root.traverse((obj) => {
+        if (obj instanceof THREE.Mesh && obj.material) {
+          const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+          for (const m of mats) {
+            if ("opacity" in m) {
+              (m as THREE.Material).transparent = opacity < 1;
+              (m as THREE.Material).opacity = opacity;
+            }
+          }
+        }
+      });
+    }
+  }
 
   function tryMove(nx: number, nz: number) {
     const clampedX = Math.min(WORLD.width - PLAYER_RADIUS, Math.max(PLAYER_RADIUS, nx));
@@ -275,12 +398,10 @@ export function createStandFirmGame(
     if (!locked) {
       let vx = 0;
       let vz = 0;
-      // On-screen pad always drives movement inside the game (never site nav).
       if (standFirmInput.left) vx -= 1;
       if (standFirmInput.right) vx += 1;
       if (standFirmInput.up) vz -= 1;
       if (standFirmInput.down) vz += 1;
-      // Keyboard only while the game panel owns focus.
       if (inputActive()) {
         if (keys.has("ArrowLeft") || keys.has("KeyA")) vx -= 1;
         if (keys.has("ArrowRight") || keys.has("KeyD")) vx += 1;
@@ -298,7 +419,6 @@ export function createStandFirmGame(
         const beforeX = player.position.x;
         const beforeZ = player.position.z;
         tryMove(player.position.x + vx, player.position.z + vz);
-        // If blocked completely, don't keep full walk intensity
         const moved = Math.hypot(player.position.x - beforeX, player.position.z - beforeZ);
         moving = moved > 0.2 ? 1 : 0.15;
         if (moved > 0.2) {
@@ -307,10 +427,11 @@ export function createStandFirmGame(
       }
 
       let nearest: { scenarioId: string; name: string; dist: number } | null = null;
-      for (const npc of NPCS) {
-        const dist = Math.hypot(player.position.x - npc.x, player.position.z - npc.y);
+      for (const v of npcVisuals) {
+        if (v.status === "locked") continue;
+        const dist = Math.hypot(player.position.x - v.x, player.position.z - v.z);
         if (dist < INTERACT_RADIUS && (!nearest || dist < nearest.dist)) {
-          nearest = { scenarioId: npc.scenarioId, name: npc.name, dist };
+          nearest = { scenarioId: v.scenarioId, name: v.name, dist };
         }
       }
       const nextNearby = nearest
@@ -327,7 +448,6 @@ export function createStandFirmGame(
         const isNear = nearby?.scenarioId === v.scenarioId;
         const s = isNear ? 1 + Math.sin(performance.now() * 0.008) * 0.08 : 1;
         v.ring.scale.set(s, s, s);
-        // NPCs stay in place with idle motion (subtle arm sway)
         updatePersonMotion(v.rig, dt, 0);
         if (isNear) {
           const dx = player.position.x - v.root.position.x;
@@ -339,13 +459,29 @@ export function createStandFirmGame(
           v.root.rotation.y += delta * Math.min(1, dt * 4);
         }
       }
+    } else {
+      for (const v of npcVisuals) {
+        const talking = focusScenarioId === v.scenarioId;
+        setPersonTalking(v.rig, talking);
+        updatePersonMotion(v.rig, dt, 0);
+      }
     }
 
     updatePersonMotion(playerRig, dt, locked ? 0 : moving);
 
-    camDesired.set(player.position.x, player.position.y + 210, player.position.z + 250);
+    const focus = focusScenarioId
+      ? npcVisuals.find((n) => n.scenarioId === focusScenarioId)
+      : null;
+    if (focus) {
+      const midX = (player.position.x + focus.root.position.x) * 0.5;
+      const midZ = (player.position.z + focus.root.position.z) * 0.5;
+      camDesired.set(midX, 160, midZ + 160);
+      lookTarget.set(midX, 42, midZ);
+    } else {
+      camDesired.set(player.position.x, player.position.y + 210, player.position.z + 250);
+      lookTarget.set(player.position.x, 38, player.position.z - 40);
+    }
     camera.position.lerp(camDesired, 1 - Math.pow(0.001, dt));
-    lookTarget.set(player.position.x, 38, player.position.z - 40);
     camera.lookAt(lookTarget);
 
     renderer.render(scene, camera);
@@ -361,15 +497,34 @@ export function createStandFirmGame(
   return {
     setLocked(v: boolean) {
       locked = v;
+      if (!v) {
+        focusScenarioId = null;
+        for (const n of npcVisuals) setPersonTalking(n.rig, false);
+      }
+    },
+    focusNpc(scenarioId: string | null) {
+      focusScenarioId = scenarioId;
     },
     markCompleted(scenarioId: string) {
       const visual = npcVisuals.find((n) => n.scenarioId === scenarioId);
-      const npc = NPCS.find((n) => n.scenarioId === scenarioId);
-      if (!visual || !npc) return;
-      updateLabelSprite(visual.labelSprite, `${npc.name} ✓`);
-      const mat = visual.ring.material as THREE.MeshStandardMaterial;
-      mat.color.setHex(0xf0c14a);
-      mat.emissive.setHex(0xf0c14a);
+      if (!visual) return;
+      applyNpcStatus(visual, "completed");
+    },
+    syncNpcStatuses(statuses) {
+      for (const visual of npcVisuals) {
+        const next = statuses[visual.scenarioId];
+        if (!next) continue;
+        applyNpcStatus(visual, next);
+      }
+    },
+    setGraphicsQuality(quality) {
+      const next = getGraphicsPreset(quality);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, next.pixelRatioCap));
+      renderer.shadowMap.enabled = next.shadows;
+      sun.castShadow = next.shadows;
+      if (next.shadows) {
+        sun.shadow.mapSize.set(next.shadowMapSize, next.shadowMapSize);
+      }
     },
     destroy() {
       disposed = true;

@@ -414,11 +414,115 @@ function makeHills() {
   return group;
 }
 
+export type MapTheme = {
+  id: string;
+  sky: number;
+  fog: number;
+  fogNear: number;
+  fogFar: number;
+  groundTint: number;
+  title: string;
+  houses: Array<{ x: number; z: number; color: number; yaw?: number }>;
+  trees: ReadonlyArray<readonly [number, number]>;
+  plaza?: { x: number; z: number; r: number };
+  pathAccent?: "cross" | "market" | "yard";
+};
+
+const MAP_THEMES: Record<string, MapTheme> = {
+  village_center: {
+    id: "village_center",
+    sky: 0x9ec9ef,
+    fog: 0xb7d4ef,
+    fogNear: 420,
+    fogFar: 1150,
+    groundTint: 0xffffff,
+    title: "Village Center",
+    houses: [
+      { x: 175, z: 140, color: 0xc45c26 },
+      { x: 775, z: 130, color: 0x3b6ea5 },
+      { x: 755, z: 500, color: 0x6b4f3a },
+      { x: 155, z: 500, color: 0x4a7c59 },
+    ],
+    trees: [
+      [80, 250],
+      [880, 260],
+      [300, 120],
+      [620, 540],
+      [420, 80],
+      [560, 560],
+      [100, 420],
+      [860, 420],
+      [50, 100],
+      [900, 100],
+    ],
+    plaza: { x: 480, z: 220, r: 78 },
+    pathAccent: "cross",
+  },
+  market_district: {
+    id: "market_district",
+    sky: 0xb7d0e8,
+    fog: 0xc9d8e8,
+    fogNear: 380,
+    fogFar: 1100,
+    groundTint: 0xf3e6c8,
+    title: "Market District",
+    houses: [
+      { x: 140, z: 160, color: 0xb45309 },
+      { x: 820, z: 150, color: 0x92400e },
+      { x: 800, z: 480, color: 0x78716c },
+      { x: 150, z: 490, color: 0xa16207 },
+      { x: 480, z: 120, color: 0x9a3412 },
+    ],
+    trees: [
+      [60, 300],
+      [900, 300],
+      [240, 80],
+      [720, 560],
+      [100, 520],
+      [860, 100],
+    ],
+    plaza: { x: 480, z: 340, r: 64 },
+    pathAccent: "market",
+  },
+  school_yard: {
+    id: "school_yard",
+    sky: 0x8eb8e0,
+    fog: 0xa8c8e4,
+    fogNear: 400,
+    fogFar: 1120,
+    groundTint: 0xdcecc8,
+    title: "School Yard",
+    houses: [
+      { x: 200, z: 140, color: 0x1e3a5f },
+      { x: 760, z: 140, color: 0x1e3a5f },
+      { x: 480, z: 120, color: 0x334155 },
+      { x: 160, z: 500, color: 0x3f6212 },
+      { x: 800, z: 500, color: 0x3f6212 },
+    ],
+    trees: [
+      [70, 240],
+      [890, 240],
+      [320, 560],
+      [640, 560],
+      [100, 100],
+      [860, 100],
+      [480, 580],
+    ],
+    plaza: { x: 480, z: 360, r: 90 },
+    pathAccent: "yard",
+  },
+};
+
+function themeForMap(mapId: string): MapTheme {
+  return MAP_THEMES[mapId] ?? MAP_THEMES.village_center!;
+}
+
 /**
- * Builds a more lived-in village set around the same playable footprint.
- * Returns collision blockers for houses/trees/props.
+ * Builds a chapter map around the shared playable footprint.
+ * Only the active map is constructed — previous maps are not kept in memory.
  */
-export function buildVillage(scene: THREE.Scene): Rect[] {
+export function buildVillage(scene: THREE.Scene, mapId = "village_center"): Rect[] {
+  const theme = themeForMap(mapId);
   const blockers: Rect[] = [
     { minX: 0, maxX: WORLD.width, minZ: -16, maxZ: 16 },
     { minX: 0, maxX: WORLD.width, minZ: WORLD.height - 16, maxZ: WORLD.height + 16 },
@@ -426,17 +530,16 @@ export function buildVillage(scene: THREE.Scene): Rect[] {
     { minX: WORLD.width - 16, maxX: WORLD.width + 16, minZ: 0, maxZ: WORLD.height },
   ];
 
-  scene.background = new THREE.Color(0x9ec9ef);
-  scene.fog = new THREE.Fog(0xb7d4ef, 420, 1150);
+  scene.background = new THREE.Color(theme.sky);
+  scene.fog = new THREE.Fog(theme.fog, theme.fogNear, theme.fogFar);
   scene.add(makeSky());
   scene.add(makeHills());
 
-  // Outer meadow (extends past playable area)
   const meadow = new THREE.Mesh(
     new THREE.CircleGeometry(900, 48),
     new THREE.MeshStandardMaterial({
       map: grassTexture(),
-      color: 0xffffff,
+      color: theme.groundTint,
       roughness: 0.98,
     })
   );
@@ -445,12 +548,11 @@ export function buildVillage(scene: THREE.Scene): Rect[] {
   meadow.receiveShadow = true;
   scene.add(meadow);
 
-  // Playable ground
   const ground = new THREE.Mesh(
     new THREE.PlaneGeometry(WORLD.width, WORLD.height),
     new THREE.MeshStandardMaterial({
       map: grassTexture(),
-      color: 0xffffff,
+      color: theme.groundTint,
       roughness: 0.98,
     })
   );
@@ -459,69 +561,96 @@ export function buildVillage(scene: THREE.Scene): Rect[] {
   ground.receiveShadow = true;
   scene.add(ground);
 
-  // Paths
   const pathMat = new THREE.MeshStandardMaterial({
     map: dirtTexture(),
     color: 0xffffff,
     roughness: 0.95,
   });
-  const pathV = new THREE.Mesh(new THREE.BoxGeometry(92, 1.2, 500), pathMat);
-  pathV.position.set(480, 0.6, 330);
-  pathV.receiveShadow = true;
-  scene.add(pathV);
-  const pathH = new THREE.Mesh(new THREE.BoxGeometry(740, 1.2, 72), pathMat);
-  pathH.position.set(480, 0.6, 340);
-  pathH.receiveShadow = true;
-  scene.add(pathH);
 
-  // Stone plaza / meeting circle
-  const plaza = new THREE.Mesh(
-    new THREE.CylinderGeometry(78, 78, 2, 40),
-    new THREE.MeshStandardMaterial({ map: stoneTexture(), roughness: 0.9 })
-  );
-  plaza.position.set(480, 1, 220);
-  plaza.receiveShadow = true;
-  scene.add(plaza);
-  const ring = new THREE.Mesh(
-    new THREE.TorusGeometry(70, 2.2, 8, 48),
-    mat(0xd4a017, { metalness: 0.25, roughness: 0.45 })
-  );
-  ring.rotation.x = Math.PI / 2;
-  ring.position.set(480, 2.2, 220);
-  scene.add(ring);
+  if (theme.pathAccent === "market") {
+    const aisle = new THREE.Mesh(new THREE.BoxGeometry(820, 1.2, 90), pathMat);
+    aisle.position.set(480, 0.6, 340);
+    aisle.receiveShadow = true;
+    scene.add(aisle);
+    for (const zx of [220, 460]) {
+      const row = new THREE.Mesh(new THREE.BoxGeometry(70, 1.2, 420), pathMat);
+      row.position.set(zx === 220 ? 260 : 700, 0.6, 340);
+      row.receiveShadow = true;
+      scene.add(row);
+    }
+    // Market stall pads
+    for (const [sx, sz] of [
+      [300, 280],
+      [660, 280],
+      [300, 420],
+      [660, 420],
+    ] as const) {
+      const stall = new THREE.Mesh(
+        new THREE.BoxGeometry(56, 18, 36),
+        mat(0xb45309, { map: woodTexture("#8b4513") })
+      );
+      stall.position.set(sx, 9, sz);
+      stall.castShadow = true;
+      scene.add(stall);
+      const canopy = new THREE.Mesh(
+        new THREE.BoxGeometry(64, 3, 44),
+        mat(0xdc2626, { roughness: 0.7 })
+      );
+      canopy.position.set(sx, 22, sz);
+      scene.add(canopy);
+      addBlocker(blockers, sx, sz, 56, 36, 4);
+    }
+  } else if (theme.pathAccent === "yard") {
+    const court = new THREE.Mesh(
+      new THREE.BoxGeometry(360, 1.4, 220),
+      new THREE.MeshStandardMaterial({ map: stoneTexture(), roughness: 0.92 })
+    );
+    court.position.set(480, 0.7, 360);
+    court.receiveShadow = true;
+    scene.add(court);
+    const pathV = new THREE.Mesh(new THREE.BoxGeometry(70, 1.2, 480), pathMat);
+    pathV.position.set(480, 0.6, 320);
+    pathV.receiveShadow = true;
+    scene.add(pathV);
+  } else {
+    const pathV = new THREE.Mesh(new THREE.BoxGeometry(92, 1.2, 500), pathMat);
+    pathV.position.set(480, 0.6, 330);
+    pathV.receiveShadow = true;
+    scene.add(pathV);
+    const pathH = new THREE.Mesh(new THREE.BoxGeometry(740, 1.2, 72), pathMat);
+    pathH.position.set(480, 0.6, 340);
+    pathH.receiveShadow = true;
+    scene.add(pathH);
+  }
 
-  // Houses
-  const houses: Array<{ x: number; z: number; color: number; yaw?: number }> = [
-    { x: 175, z: 140, color: 0xc45c26 },
-    { x: 775, z: 130, color: 0x3b6ea5 },
-    { x: 755, z: 500, color: 0x6b4f3a },
-    { x: 155, z: 500, color: 0x4a7c59 },
-  ];
-  for (const h of houses) {
+  if (theme.plaza) {
+    const plaza = new THREE.Mesh(
+      new THREE.CylinderGeometry(theme.plaza.r, theme.plaza.r, 2, 40),
+      new THREE.MeshStandardMaterial({ map: stoneTexture(), roughness: 0.9 })
+    );
+    plaza.position.set(theme.plaza.x, 1, theme.plaza.z);
+    plaza.receiveShadow = true;
+    scene.add(plaza);
+    const ring = new THREE.Mesh(
+      new THREE.TorusGeometry(theme.plaza.r - 8, 2.2, 8, 48),
+      mat(0xd4a017, { metalness: 0.25, roughness: 0.45 })
+    );
+    ring.rotation.x = Math.PI / 2;
+    ring.position.set(theme.plaza.x, 2.2, theme.plaza.z);
+    scene.add(ring);
+  }
+
+  for (const h of theme.houses) {
     const built = makeHouse(h.x, h.z, h.color, { yaw: h.yaw });
     scene.add(built.group);
     addBlocker(blockers, h.x, h.z, built.w, built.d, 6);
   }
 
-  // Trees
-  const trees = [
-    [80, 250],
-    [880, 260],
-    [300, 120],
-    [620, 540],
-    [420, 80],
-    [560, 560],
-    [100, 420],
-    [860, 420],
-    [50, 100],
-    [900, 100],
-  ] as const;
-  for (const [tx, tz] of trees) {
+  for (const [tx, tz] of theme.trees) {
     scene.add(makeTree(tx, tz));
     addBlocker(blockers, tx, tz, 28, 28, 2);
   }
 
-  // Bushes / flowers / benches / lamps / fences
   for (const [bx, bz] of [
     [250, 280],
     [700, 280],
@@ -544,7 +673,6 @@ export function buildVillage(scene: THREE.Scene): Rect[] {
   scene.add(makeFence(40, 600, 280, 600));
   scene.add(makeFence(680, 600, 920, 600));
 
-  // Low border hedge along playable edge (visual, light collision already from world bounds)
   const hedgeMat = mat(0x2f6b32, { roughness: 1 });
   for (let i = 0; i < 24; i++) {
     const t = i / 23;
@@ -555,7 +683,10 @@ export function buildVillage(scene: THREE.Scene): Rect[] {
       [930, 40 + t * 560],
     ] as const) {
       if (Math.random() > 0.35) {
-        const hedge = new THREE.Mesh(new THREE.SphereGeometry(8 + Math.random() * 4, 8, 6), hedgeMat);
+        const hedge = new THREE.Mesh(
+          new THREE.SphereGeometry(8 + Math.random() * 4, 8, 6),
+          hedgeMat
+        );
         hedge.position.set(x, 6, z);
         hedge.castShadow = true;
         scene.add(hedge);
@@ -564,4 +695,8 @@ export function buildVillage(scene: THREE.Scene): Rect[] {
   }
 
   return blockers;
+}
+
+export function mapDisplayName(mapId: string): string {
+  return themeForMap(mapId).title;
 }

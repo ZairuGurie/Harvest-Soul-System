@@ -1,14 +1,27 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
-import type { PlayerProgressState } from "@/lib/game/types";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { GameMapId, GameScenario, PlayerProgressState } from "@/lib/game/types";
 import { applyChoiceToProgress } from "@/lib/game/progression";
-import { listSeedScenarios } from "@/lib/game/content";
+import { listSeedScenarios, getSeedScenario } from "@/lib/game/content";
+import {
+  buildNpcBindingsForMap,
+  defaultPlayerSpawn,
+  isScenarioUnlocked,
+  mapIdForChapter,
+  normalizeProgress,
+  xpIntoLevel,
+} from "@/lib/game";
 import { loadLocalProgress, saveLocalProgress } from "@/lib/game/localProgress";
+import {
+  loadGraphicsQuality,
+  saveGraphicsQuality,
+  type GraphicsQuality,
+} from "@/lib/game/quality";
 import GameMovementPanel from "./GameMovementPanel";
 import ScenarioOverlay, { type ScenarioResolvePayload } from "./ScenarioOverlay";
-import type { StandFirmBootData } from "./standFirmConfig";
+import { npcSpotsFromBindings, type StandFirmBootData } from "./standFirmConfig";
 import type { StandFirmGameHandle } from "./StandFirmWorld";
 
 export default function GameCanvas({
@@ -24,9 +37,16 @@ export default function GameCanvas({
   const nearbyRef = useRef<{ scenarioId: string; name: string } | null>(null);
   const panelActiveRef = useRef(true);
   const overlayOpenRef = useRef(false);
+  const startingProgress: PlayerProgressState = authenticated
+    ? normalizeProgress(initialProgress)
+    : initialProgress ?? loadLocalProgress();
 
-  const [progress, setProgress] = useState<PlayerProgressState>(() =>
-    initialProgress ?? loadLocalProgress()
+  const progressRef = useRef<PlayerProgressState>(startingProgress);
+
+  const [progress, setProgress] = useState<PlayerProgressState>(startingProgress);
+  const [scenarios, setScenarios] = useState<GameScenario[]>(() => listSeedScenarios());
+  const [mapId, setMapId] = useState<GameMapId | string>(() =>
+    mapIdForChapter(startingProgress.currentChapter || 1)
   );
   const [ready, setReady] = useState(false);
   const [bootError, setBootError] = useState<string | null>(null);
@@ -35,11 +55,17 @@ export default function GameCanvas({
   );
   const [nearbyHint, setNearbyHint] = useState<string | null>(null);
   const [panelActive, setPanelActive] = useState(true);
+  const [gfx, setGfx] = useState<GraphicsQuality>("medium");
+
+  progressRef.current = progress;
+
+  const xpBar = useMemo(() => xpIntoLevel(progress.xp), [progress.xp]);
 
   const openScenario = useCallback((scenarioId: string, npcName: string) => {
     nearbyRef.current = { scenarioId, name: npcName };
     overlayOpenRef.current = true;
     gameRef.current?.setLocked(true);
+    gameRef.current?.focusNpc(scenarioId);
     setActive({ scenarioId, npcName });
   }, []);
 
@@ -52,10 +78,85 @@ export default function GameCanvas({
   }, [active]);
 
   useEffect(() => {
-    if (!authenticated) {
-      saveLocalProgress(progress);
+    // Keep a device backup even when signed in so guest→cloud merge can recover
+    // if a cloud write ever fails mid-session.
+    saveLocalProgress(progress);
+  }, [progress]);
+
+  useEffect(() => {
+    setGfx(loadGraphicsQuality());
+  }, []);
+
+  // Load catalog + authoritative progress (and merge guest saves once when signed in)
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/game");
+        const data = await res.json();
+        if (!res.ok || cancelled) return;
+        setScenarios(listSeedScenarios());
+
+        if (!authenticated) return;
+
+        let cloud = data.progress ? normalizeProgress(data.progress) : normalizeProgress(null);
+        const guest = loadLocalProgress();
+        const guestHasProgress =
+          guest.completedScenarioIds.length > 0 ||
+          Object.keys(guest.choicesByScenario).length > 0;
+
+        if (guestHasProgress) {
+          try {
+            const mergeRes = await fetch("/api/game/progress", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ guestProgress: guest }),
+            });
+            const mergeData = await mergeRes.json();
+            if (mergeRes.ok && mergeData.progress) {
+              cloud = normalizeProgress(mergeData.progress);
+            }
+          } catch {
+            // keep cloud snapshot
+          }
+        }
+
+        if (cancelled) return;
+        setProgress(cloud);
+        progressRef.current = cloud;
+        saveLocalProgress(cloud);
+
+        const catalog = listSeedScenarios();
+        const bindings = buildNpcBindingsForMap(mapId, catalog, {
+          completedScenarioIds: cloud.completedScenarioIds,
+          isUnlocked: (s) => isScenarioUnlocked(s, cloud, catalog),
+        });
+        const statuses: Record<string, "available" | "completed" | "locked"> = {};
+        for (const b of bindings) statuses[b.scenarioId] = b.status;
+        gameRef.current?.syncNpcStatuses(statuses);
+      } catch {
+        // keep seed
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authenticated]);
+
+  // Keep chapter map in sync with progress
+  useEffect(() => {
+    const nextMap = mapIdForChapter(progress.currentChapter || 1);
+    // Prefer map of current playable scenario if available
+    const current = scenarios
+      .filter((s) => s.isActive && !progress.completedScenarioIds.includes(s.id))
+      .filter((s) => isScenarioUnlocked(s, progress, scenarios))
+      .sort((a, b) => a.levelNumber - b.levelNumber)[0];
+    const desired = current?.mapId || nextMap;
+    if (desired !== mapId) {
+      setMapId(desired);
     }
-  }, [progress, authenticated]);
+  }, [progress, scenarios, mapId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -72,9 +173,19 @@ export default function GameCanvas({
           gameRef.current = null;
         }
         hostRef.current.innerHTML = "";
+        setReady(false);
+
+        const bindings = buildNpcBindingsForMap(mapId, scenarios, {
+          completedScenarioIds: progressRef.current.completedScenarioIds,
+          isUnlocked: (s) => isScenarioUnlocked(s, progressRef.current, scenarios),
+        });
 
         const boot: StandFirmBootData = {
-          completedScenarioIds: progress.completedScenarioIds,
+          mapId,
+          npcs: npcSpotsFromBindings(bindings),
+          playerSpawn: defaultPlayerSpawn(mapId),
+          completedScenarioIds: progressRef.current.completedScenarioIds,
+          graphicsQuality: loadGraphicsQuality(),
           isInputActive: () => panelActiveRef.current && !overlayOpenRef.current,
           onInteract: (scenarioId, npcName) => {
             openScenario(scenarioId, npcName);
@@ -86,7 +197,6 @@ export default function GameCanvas({
           onReady: () => {
             if (!cancelled) {
               setReady(true);
-              // Own keyboard focus inside the game panel so arrows don't scroll the page.
               shellRef.current?.focus({ preventScroll: true });
             }
           },
@@ -98,7 +208,7 @@ export default function GameCanvas({
         game = createStandFirmGame(hostRef.current, boot);
         gameRef.current = game;
       } catch {
-        if (!cancelled) setBootError("Unable to load the 3D village. Please try again.");
+        if (!cancelled) setBootError("Unable to load the 3D world. Please try again.");
       }
     })();
 
@@ -111,35 +221,56 @@ export default function GameCanvas({
         game.destroy(true);
       }
     };
-    // Mount once for the play session; progress updates handled via game API.
+    // Remount when the active chapter map changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [mapId]);
 
   function closeOverlay() {
     overlayOpenRef.current = false;
     setActive(null);
+    gameRef.current?.focusNpc(null);
     gameRef.current?.setLocked(false);
     shellRef.current?.focus({ preventScroll: true });
+  }
+
+  function syncWorldNpcStatuses(nextProgress: PlayerProgressState) {
+    progressRef.current = nextProgress;
+    const catalog = scenarios.length ? scenarios : listSeedScenarios();
+    const bindings = buildNpcBindingsForMap(mapId, catalog, {
+      completedScenarioIds: nextProgress.completedScenarioIds,
+      isUnlocked: (s) => isScenarioUnlocked(s, nextProgress, catalog),
+    });
+    const statuses: Record<string, "available" | "completed" | "locked"> = {};
+    for (const b of bindings) statuses[b.scenarioId] = b.status;
+    gameRef.current?.syncNpcStatuses(statuses);
   }
 
   function handleResolved(data: ScenarioResolvePayload) {
     if (!data.scenario || !data.choice || !data.progress) return;
 
-    const chapterIds = listSeedScenarios(1).map((s) => s.id);
+    let nextProgress: PlayerProgressState;
+
     if (!authenticated) {
+      const scenario =
+        scenarios.find((s) => s.id === data.scenario!.id) ??
+        getSeedScenario(data.scenario!.id);
+      if (!scenario) return;
       const applied = applyChoiceToProgress(progress, {
-        scenarioId: data.scenario.id,
+        scenario,
         choiceId: data.choice.id,
         xpReward: data.progress.xpEarned || 0,
-        theme: "",
-        chapterScenarioIds: chapterIds,
+        allScenarios: scenarios.length ? scenarios : listSeedScenarios(),
       });
-      const next: PlayerProgressState = data.alreadyCompleted
+      nextProgress = data.alreadyCompleted
         ? progress
         : {
             ...applied.next,
             xp: data.progress.xp,
             level: data.progress.level,
+            currentChapter:
+              data.progress.currentChapter ?? applied.next.currentChapter,
+            decisionFlags:
+              data.progress.decisionFlags ?? applied.next.decisionFlags,
             achievementIds: [
               ...new Set([
                 ...applied.next.achievementIds,
@@ -147,30 +278,44 @@ export default function GameCanvas({
               ]),
             ],
           };
-      setProgress(next);
-      saveLocalProgress(next);
     } else {
-      setProgress((prev) => ({
-        ...prev,
-        xp: data.progress!.xp,
-        level: data.progress!.level,
-        completedScenarioIds: prev.completedScenarioIds.includes(data.scenario!.id)
-          ? prev.completedScenarioIds
-          : [...prev.completedScenarioIds, data.scenario!.id],
+      // Prefer authoritative cloud snapshot from the resolve response.
+      nextProgress = normalizeProgress({
+        xp: data.progress.xp,
+        level: data.progress.level,
+        currentChapter: data.progress.currentChapter,
+        completedScenarioIds: data.progress.completedScenarioIds?.length
+          ? data.progress.completedScenarioIds
+          : progress.completedScenarioIds.includes(data.scenario.id)
+            ? progress.completedScenarioIds
+            : [...progress.completedScenarioIds, data.scenario.id],
         achievementIds: [
           ...new Set([
-            ...prev.achievementIds,
-            ...(data.progress!.newlyEarnedAchievements?.map((a) => a.id) ?? []),
+            ...(data.progress.achievementIds ?? progress.achievementIds),
+            ...(data.progress.newlyEarnedAchievements?.map((a) => a.id) ?? []),
           ]),
         ],
         choicesByScenario: {
-          ...prev.choicesByScenario,
-          [data.scenario!.id]: data.choice!.id,
+          ...progress.choicesByScenario,
+          ...(data.progress.choicesByScenario ?? {}),
+          [data.scenario.id]: data.choice.id,
         },
-      }));
+        decisionFlags: data.progress.decisionFlags ?? progress.decisionFlags ?? [],
+      });
     }
 
-    gameRef.current?.markCompleted(data.scenario.id);
+    setProgress(nextProgress);
+    saveLocalProgress(nextProgress);
+
+    // Re-evaluate every NPC on this map so newly unlocked people
+    // flip Locked → Available without a page refresh.
+    syncWorldNpcStatuses(nextProgress);
+  }
+
+  function changeGfx(next: GraphicsQuality) {
+    setGfx(next);
+    saveGraphicsQuality(next);
+    gameRef.current?.setGraphicsQuality(next);
   }
 
   return (
@@ -183,7 +328,6 @@ export default function GameCanvas({
       style={{ overscrollBehavior: "contain", touchAction: "manipulation" }}
       onFocus={() => setPanelActive(true)}
       onBlur={(e) => {
-        // Stay active while focus moves inside the panel (pad / Talk / overlay).
         if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
         setPanelActive(false);
       }}
@@ -195,20 +339,37 @@ export default function GameCanvas({
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 px-3 py-2.5 text-xs text-slate-200 sm:px-4">
         <div className="flex flex-wrap items-center gap-3">
           <span>
-            Level <strong className="text-white">{progress.level}</strong>
+            Journey Lv <strong className="text-white">{progress.level}</strong>
           </span>
           <span>
-            XP <strong className="text-white">{progress.xp}</strong>
+            XP{" "}
+            <strong className="text-white">
+              {xpBar.into}/{xpBar.need}
+            </strong>
           </span>
           <span>
-            Completed{" "}
-            <strong className="text-white">{progress.completedScenarioIds.length}</strong>
+            Chapter <strong className="text-white">{progress.currentChapter}</strong>
+          </span>
+          <span className="hidden sm:inline text-slate-400">
+            {progress.completedScenarioIds.length} completed
           </span>
           {!panelActive ? (
             <span className="text-amber-200/90">Click game to control</span>
           ) : null}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <label className="flex items-center gap-1 text-[11px] text-slate-400">
+            Graphics
+            <select
+              className="rounded-md border border-white/20 bg-[#0b1220] px-1.5 py-0.5 text-slate-200"
+              value={gfx}
+              onChange={(e) => changeGfx(e.target.value as GraphicsQuality)}
+            >
+              <option value="low">Low</option>
+              <option value="medium">Medium</option>
+              <option value="high">High</option>
+            </select>
+          </label>
           {!authenticated ? (
             <Link
               href="/login?next=/game/play"
@@ -229,7 +390,7 @@ export default function GameCanvas({
         <div ref={hostRef} className="absolute inset-0 [&_canvas]:h-full! [&_canvas]:w-full!" />
         {!ready && !bootError ? (
           <div className="absolute inset-0 z-10 flex items-center justify-center bg-[#0b1220]/40 text-sm text-white">
-            Loading 3D village…
+            Loading world…
           </div>
         ) : null}
         {bootError ? (
@@ -272,8 +433,7 @@ export default function GameCanvas({
 
       <p className="px-3 py-2 text-[11px] text-slate-400 sm:px-4">
         Use the on-screen pad or WASD / arrows while the game panel is focused. E or Talk to
-        speak. Movement stays inside this panel and will not scroll the page or trigger site
-        navigation. Progress is educational only — not spiritual status.
+        speak. XP and journey level are game progression only — not spiritual status.
       </p>
     </div>
   );

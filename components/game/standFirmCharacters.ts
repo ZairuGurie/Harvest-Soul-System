@@ -20,9 +20,10 @@ export type PersonRig = {
   rightArm: THREE.Group;
   phase: number;
   walkAmount: number;
+  talking: boolean;
 };
 
-/** Distinct looks for Chapter 1 NPCs — procedural, no external models. */
+/** Distinct looks for NPCs — enhanced procedural, no external models required. */
 export const NPC_LOOKS: Record<string, PersonLook> = {
   jordan: {
     outfit: 0x2f6fed,
@@ -47,6 +48,102 @@ export const NPC_LOOKS: Record<string, PersonLook> = {
     hair: 0x1a1a1a,
     hairStyle: "side",
     scale: 1.04,
+  },
+  sam: {
+    outfit: 0x7c3aed,
+    pants: 0x312e81,
+    skin: 0xd4a574,
+    hair: 0x4a3728,
+    hairStyle: "short",
+    scale: 0.98,
+  },
+  ruth: {
+    outfit: 0xb45309,
+    pants: 0x44403c,
+    skin: 0xc68642,
+    hair: 0x1c1917,
+    hairStyle: "bun",
+    scale: 1,
+  },
+  noah: {
+    outfit: 0x0f766e,
+    pants: 0x134e4a,
+    skin: 0x8d5524,
+    hair: 0x292524,
+    hairStyle: "side",
+    scale: 1.05,
+  },
+  leah: {
+    outfit: 0xbe185d,
+    pants: 0x701a75,
+    skin: 0xe0ac69,
+    hair: 0x78350f,
+    hairStyle: "bun",
+    scale: 0.95,
+  },
+  caleb: {
+    outfit: 0x0369a1,
+    pants: 0x0c4a6e,
+    skin: 0xd4a574,
+    hair: 0x292524,
+    hairStyle: "short",
+    scale: 1.02,
+  },
+  hannah: {
+    outfit: 0x4d7c0f,
+    pants: 0x365314,
+    skin: 0xc68642,
+    hair: 0x3d2314,
+    hairStyle: "side",
+    scale: 0.97,
+  },
+  isaiah: {
+    outfit: 0x57534e,
+    pants: 0x292524,
+    skin: 0x8d5524,
+    hair: 0x1c1917,
+    hairStyle: "cap",
+    scale: 1.06,
+  },
+  talia: {
+    outfit: 0xdb2777,
+    pants: 0x831843,
+    skin: 0xe0ac69,
+    hair: 0x292524,
+    hairStyle: "bun",
+    scale: 0.94,
+  },
+  marcus: {
+    outfit: 0x1d4ed8,
+    pants: 0x1e3a8a,
+    skin: 0x8d5524,
+    hair: 0x0a0a0a,
+    hairStyle: "short",
+    scale: 1.08,
+  },
+  priya: {
+    outfit: 0xa16207,
+    pants: 0x713f12,
+    skin: 0xc68642,
+    hair: 0x1c1917,
+    hairStyle: "side",
+    scale: 0.96,
+  },
+  daniel: {
+    outfit: 0x047857,
+    pants: 0x064e3b,
+    skin: 0xd4a574,
+    hair: 0x44403c,
+    hairStyle: "short",
+    scale: 1.01,
+  },
+  grace: {
+    outfit: 0x9f1239,
+    pants: 0x4c0519,
+    skin: 0xe0ac69,
+    hair: 0x78350f,
+    hairStyle: "bun",
+    scale: 0.99,
   },
 };
 
@@ -259,7 +356,12 @@ export function createPersonFigure(look: PersonLook): PersonRig {
     rightArm,
     phase: Math.random() * Math.PI * 2,
     walkAmount: 0,
+    talking: false,
   };
+}
+
+export function setPersonTalking(rig: PersonRig, talking: boolean) {
+  rig.talking = talking;
 }
 
 const WALK_FREQ = 9;
@@ -285,10 +387,20 @@ export function updatePersonMotion(rig: PersonRig, dt: number, moving: number) {
 
   rig.leftLeg.rotation.x = leg;
   rig.rightLeg.rotation.x = -leg;
-  rig.leftArm.rotation.x = -arm + idle;
-  rig.rightArm.rotation.x = arm - idle;
-  rig.leftArm.rotation.z = 0.18;
-  rig.rightArm.rotation.z = -0.18;
+  if (rig.talking && walk < 0.1) {
+    const talk = Math.sin(rig.phase * 2.2) * 0.35;
+    rig.leftArm.rotation.x = -0.35 + talk;
+    rig.rightArm.rotation.x = 0.15 - talk * 0.4;
+    rig.leftArm.rotation.z = 0.35;
+    rig.rightArm.rotation.z = -0.1;
+    rig.body.rotation.y = Math.sin(rig.phase * 0.8) * 0.06;
+  } else {
+    rig.leftArm.rotation.x = -arm + idle;
+    rig.rightArm.rotation.x = arm - idle;
+    rig.leftArm.rotation.z = 0.18;
+    rig.rightArm.rotation.z = -0.18;
+    rig.body.rotation.y = 0;
+  }
 
   rig.body.position.y = Math.abs(Math.sin(rig.phase)) * 1.6 * walk;
   rig.body.rotation.z = a * 0.035 * walk;

@@ -1,3 +1,6 @@
+import type { GraphicsQuality } from "@/lib/game/quality";
+import type { WorldNpcBinding } from "@/lib/game/worldBinding";
+
 export type NpcSpot = {
   id: string;
   scenarioId: string;
@@ -5,10 +8,15 @@ export type NpcSpot = {
   x: number;
   y: number;
   color: number;
+  status?: "available" | "completed" | "locked";
 };
 
 export type StandFirmBootData = {
+  mapId: string;
+  npcs: NpcSpot[];
+  playerSpawn?: { x: number; z: number };
   completedScenarioIds: string[];
+  graphicsQuality?: GraphicsQuality;
   onInteract: (scenarioId: string, npcName: string) => void;
   onNearbyChange?: (nearby: { scenarioId: string; name: string } | null) => void;
   /** When false, keyboard movement is ignored so keys can serve site/browser UI. */
@@ -23,6 +31,7 @@ export const WORLD = {
   tile: 32,
 };
 
+/** @deprecated Use scenario-driven bindings from lib/game/worldBinding. Kept for legacy imports. */
 export const NPCS: NpcSpot[] = [
   {
     id: "jordan",
@@ -49,3 +58,15 @@ export const NPCS: NpcSpot[] = [
     color: 0xc9972a,
   },
 ];
+
+export function npcSpotsFromBindings(bindings: WorldNpcBinding[]): NpcSpot[] {
+  return bindings.map((b) => ({
+    id: b.id,
+    scenarioId: b.scenarioId,
+    name: b.name,
+    x: b.x,
+    y: b.y,
+    color: b.color,
+    status: b.status,
+  }));
+}

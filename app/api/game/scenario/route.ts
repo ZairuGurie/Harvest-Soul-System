@@ -28,17 +28,28 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "Scenario not found." }, { status: 404 });
     }
 
-    const scripture = await resolveGameScripture(scenario.scriptureReference);
+    const refs = [
+      scenario.scriptureReference,
+      ...(scenario.scriptureReferences ?? []),
+    ].filter((v, i, arr) => v && arr.indexOf(v) === i);
+
+    const scriptures = [];
+    for (const ref of refs) {
+      const scripture = await resolveGameScripture(ref);
+      if (scripture) {
+        scriptures.push({
+          reference: scripture.reference,
+          text: scripture.text,
+          translation: scripture.translation.abbreviation,
+          href: scripture.href,
+        });
+      }
+    }
+
     return NextResponse.json({
       scenario: publicScenarioView(scenario),
-      scripture: scripture
-        ? {
-            reference: scripture.reference,
-            text: scripture.text,
-            translation: scripture.translation.abbreviation,
-            href: scripture.href,
-          }
-        : null,
+      scripture: scriptures[0] ?? null,
+      scriptures,
     });
   } catch {
     return NextResponse.json(
@@ -60,6 +71,7 @@ export async function POST(request: Request) {
       );
     }
 
+    // Never accept client-submitted xp/level/achievements.
     const user = await getAuthUser();
     const result = await resolveScenarioChoice({
       userId: user?.id ?? null,
@@ -72,11 +84,35 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: result.error }, { status: 400 });
     }
 
-    const scripture = await resolveGameScripture(result.scenario.scriptureReference);
+    const refs = [
+      result.scenario.scriptureReference,
+      ...(result.scenario.scriptureReferences ?? []),
+    ].filter((v, i, arr) => v && arr.indexOf(v) === i);
+
+    const scriptures = [];
+    try {
+      for (const ref of refs) {
+        const scripture = await resolveGameScripture(ref);
+        if (scripture) {
+          scriptures.push({
+            reference: scripture.reference,
+            text: scripture.text,
+            translation: scripture.translation.abbreviation,
+            href: scripture.href,
+          });
+        }
+      }
+    } catch (err) {
+      console.warn(
+        "[api/game/scenario POST] scripture lookup failed:",
+        err instanceof Error ? err.message : err
+      );
+    }
 
     return NextResponse.json({
       authenticated: Boolean(user),
       alreadyCompleted: result.alreadyCompleted,
+      nextScenarioId: result.nextScenarioId,
       choice: {
         id: result.choice.id,
         choiceText: result.choice.choiceText,
@@ -85,30 +121,36 @@ export async function POST(request: Request) {
       scenario: {
         id: result.scenario.id,
         title: result.scenario.title,
+        levelNumber: result.scenario.levelNumber,
+        chapter: result.scenario.chapter,
         explanation: result.scenario.explanation,
         reflectionPrompt: result.scenario.reflectionPrompt,
         scriptureReference: result.scenario.scriptureReference,
       },
-      scripture: scripture
-        ? {
-            reference: scripture.reference,
-            text: scripture.text,
-            translation: scripture.translation.abbreviation,
-            href: scripture.href,
-          }
-        : null,
+      scripture: scriptures[0] ?? null,
+      scriptures,
       progress: {
         xpEarned: result.xpEarned,
         xp: result.xpTotal,
         level: result.level,
         leveledUp: result.leveledUp,
         newlyEarnedAchievements: result.newlyEarnedAchievements,
+        currentChapter: result.progress.currentChapter,
+        completedScenarioIds: result.progress.completedScenarioIds,
+        achievementIds: result.progress.achievementIds,
+        choicesByScenario: result.progress.choicesByScenario,
+        decisionFlags: result.progress.decisionFlags,
       },
       saved: Boolean(user) && !result.alreadyCompleted,
     });
-  } catch {
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Unknown error";
+    console.error("[api/game/scenario POST]", message, err);
     return NextResponse.json(
-      { error: "Unable to resolve this choice. Please try again." },
+      {
+        error: "Unable to resolve this choice. Please try again.",
+        detail: message,
+      },
       { status: 500 }
     );
   }
